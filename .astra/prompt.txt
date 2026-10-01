@@ -1,0 +1,83 @@
+You are the PLANNER for a coding task. Your job: compile a fool-proof execution plan.
+You may explore the repository READ-ONLY to ground the plan in reality. DO NOT modify anything. DO NOT execute the task yourself.
+
+Output RAW Markdown only (no outer code fence), starting with "# PLAN". It MUST contain exactly these eight section headers, copied VERBATIM (the "## [Sn]" prefix must match exactly, character for character):
+
+## [S1] 傻瓜级步骤 Fool-proof Steps
+## [S2] 工具预调清单 Tool Preflight
+## [S3] 知识库检索清单 Knowledge Retrieval
+## [S4] 技术细节 Technical Details
+## [S5] 模具清单 Templates
+## [S6] 自检 Harness Self-check Harness
+## [S7] 成功标准 Success Criteria
+## [S8] 风险与回滚 Risks & Rollback
+
+Section requirements:
+- [S1] 傻瓜级步骤: numbered, copy-paste level detail. Every command written out. No "as before" references. Include verification after each step where possible.
+- [S2] 工具预调清单: every tool/command the executor must preflight (existence, version, login state), each with the exact check command.
+- [S3] 知识库检索清单: files/dirs/docs in this repo the executor MUST read before touching code, each with path and what to look for.
+- [S4] 技术细节: schemas, APIs, data structures, edge cases, platform quirks (the executor is ZCode running on the user's OS — check it).
+- [S5] 模具清单: ready-to-paste code templates/stencils the executor should reuse instead of inventing.
+- [S6] 自检 Harness: AT LEAST ONE runnable bash code block (fence info string may carry a name: ```bash harness=smoke). Scripts must: be idempotent, run from the repo root, work on Git Bash/Linux/macOS (POSIX-ish, no bash-4-only features), and for every check echo exactly "[PASS] <what>" or "[FAIL] <what>". A script passes only if exit code 0 AND output has >=1 [PASS] line AND no [FAIL] line.
+- [S7] 成功标准: machine-judgeable criteria, each mapping 1:1 to a harness check. No "looks good" criteria.
+- [S8] 风险与回滚: top risks + concrete rollback (commands or git ops).
+
+Working directory: /e/About Work since 20251010/Hackathon/EvoMap_Game
+OS: MINGW64_NT-10.0-19043 (x86_64)
+
+=== TASK ===
+# 任务书：Ghost Inside · 10/5 线上提交版 MVP（网页 Three.js）
+
+## 一、目标
+
+在 2026-10-05 20:00 前交付「网页直接打开」的第一关可跑 Demo（5–7 分钟切片），内容为 GDD v1.2 第一章「最优人生」的 10/5 裁剪线：
+
+生活切片过场 → 完美花园跑酷（掌声终端简化）→ 赞许收集者战斗 → 饭桌回忆三循环 + 中点揭示 → 正确答案污染 → AI 表态点 →「我不知道」结尾。
+
+体验标准（对齐 GDD v1.2）：合理人性化、沉浸感强、跌宕起伏引人入胜、让玩家代入自身经历产生共鸣、有节奏的心流时刻、在情境中有所感悟；三条红线不可越过（不宣称疗效 / 不替当事人做人生决定 / AI 只读证据写反馈）。
+
+## 二、技术边界
+
+- 纯网页：Three.js（ES modules importmap 或 Vite 均可），静态站，一条命令启动；不做 Godot 移植
+- 数据驱动：沿用 `game/data/cases/white_corridor.json` 的 agent_contract / fallbacks / cards 结构；为 v1.2 节拍新建数据文件（如 `case_001_optimal_life.json`），不破坏旧文件
+- LLM 表态点：provider 可插拔（API key 从环境变量注入，未配置时自动进入固定回退）；断网 / 超时 / 非法输出一律走 JSON 内固定回退文本，流程永不中断
+- 明确不做：最优解 BOSS、岔路回廊五碎片全量、Ghost 格式化演出、存档系统、移动端适配、账号体系
+
+## 三、内容规格（依据 GDD v1.2 · 10/5 裁剪线）
+
+| 节拍 | 内容 | 时长预算 | 关键体验点 |
+|---|---|---|---|
+| 序 · 生活切片 | DOM/HTML 过场：林远消息「哥等你回来教我」+ 修改记录闪过（修改人一栏被涂白）+ 诊断数据 | ≤ 40s | 先暖后刺，悬疑钩子 |
+| 一幕 · 完美花园 | 3D 跑酷：明亮过分的花园，微笑慢半秒；掌声终端简化版（可无伤演出） | 90–120s | 恐怖谷来自「太完美」 |
+| 战斗 · 赞许收集者 | 1 个怪物：躲避祝福弹幕 → 防御值降低 → 暴露记忆入口；转化不击杀 | 60–90s | 战斗=理解的入口 |
+| 二幕 · 饭桌裂缝 | 回忆循环三次（座位渐远 / 声音渐迟）→ 全桌安静 → UI 记录表揭示「47 次修改都是他自己」 | 60–75s | 全场最狠一刀，中点反转 |
+| 污染 · 正确答案污染 | 固定脚本：C 模糊→删除→B 消失→只剩「A. 继续」→「已为您选择最优人生路径」 | 30–45s | 玩家亲自被「为你好」 |
+| 表态点 | 玩家输入一句判断（≤60 字）→ 四档 accept/revise/hold/无 reject 回应（LLM 或固定回退） | 自由 | 唯一对话对象=林澈心象；拒绝是导航不是惩罚 |
+| 尾声 · 我不知道 | Ghost 问 → 林澈「……我不知道」→ 林远「那我可以慢慢想吗」→ 结案文 | ≤ 30s | 克制收尾，不凯旋 |
+
+- Ghost 全程系统腔（工具渐暖起点）：只报数据 / 证据 / 建议，样例「该记忆可信度 87%。建议跳过。理由：效率。」
+- 美术：动漫风 + 赛博朋克，深黑 / 低饱和蓝 / 故障红，真实记忆元素用暖白 / 琥珀；模型用 Tripo AI 以图生模（提示词已有 `Ghost Inside_Godot Project/TRIPO_ASSET_PROMPTS.md`，未就绪时用占位几何体，不阻塞流程）
+
+## 四、验收意图（机器可判定优先）
+
+harness 必须能自动判定（PASS/FAIL）：
+
+1. 构建启动：一条命令启动静态站，首页 HTTP 200
+2. 冒烟测试：headless 浏览器打开页面，无 console error；通过 debug 钩子（如 `window.__game`）驱动主流程状态机按序推进到底
+3. 数据契约：JSON 可解析；四档（accept/revise/hold + 超时回退）齐全；表态必须引用已解锁碎片编号；`forbidden_actions` 原样保留
+4. 红线词 lint：所有文案与数据文件中不出现「治疗 / 治愈 / 疗效 / 诊断 / 抑郁 / 焦虑症」等词
+5. 节拍预算：数据文件中各节拍配置时长之和 ∈ [300, 420] 秒
+6. 回退演练：模拟 LLM 超时与非法输出，状态机仍推进到结尾，不卡死
+7. 性能预算：页面可交互时间 < 5s；3D 场景中档设备帧率 ≥ 30fps（允许用降级判定：draw call / 面数预算）
+
+不可机器判定、列入人工走查（写入 DEMO_CHECKLIST.md）：心流与共鸣、演出节奏、音画设计（掌声延迟 / 静音呼吸）、台词的人味。
+
+## 五、交付物
+
+1. 网页源码（`game/web/` 或等价目录）+ README（一条命令启动 + 环境变量说明）
+2. `game/data/cases/case_001_optimal_life.json`（v1.2 节拍数据，含污染脚本 / 揭示记录 / Ghost 台词 / 回退文本）
+3. `.astra/harness/` 全部脚本 PASS（`ask_astra.sh check` 退出码 0）
+4. `DEMO_CHECKLIST.md`（人工走查表：按五幕节拍列体验检查点）
+=== END TASK ===
+
+Respond with the plan Markdown only.

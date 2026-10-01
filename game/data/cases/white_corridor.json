@@ -1,0 +1,79 @@
+{
+  "source_note": "12–15 小时 Demo 的运行数据源",
+  "schema_version": 1,
+  "case_id": "case_001_white_corridor",
+  "title": "白色走廊",
+  "client": {
+    "name": "林澈",
+    "age": 22,
+    "identity": "医学毕业生，即将进入医疗研究机构",
+    "request": "请帮我删掉那个总想逃走的自己。",
+    "core_belief": "如果我不能把家人的付出变成一个有用、成功的人生，我就不值得继续得到他们的爱。"
+  },
+  "map_objects": [
+    {"id": "O01", "name": "家庭合照", "inspect_text": "笑容旁显示着：稳定、争气、放心。"},
+    {"id": "O02", "name": "成绩单", "inspect_text": "低于标准的部分被白色涂掉。"},
+    {"id": "O03", "name": "掌声终端", "inspect_text": "关闭掌声后，第一次听见林澈的呼吸。"}
+  ],
+  "memory": {
+    "id": "M01",
+    "title": "家庭饭桌",
+    "duration_seconds": 55,
+    "sync_nodes": 3,
+    "segments": [
+      {"from": 0, "to": 15, "line": "这条路最稳，以后不用担心了。", "hazard": "text_line", "resonance_target": "林澈握紧又松开的手", "evidence_id": "F02"},
+      {"from": 15, "to": 35, "line": "总算没有走弯路。", "hazard": "shrinking_safe_area", "resonance_target": "父亲藏在桌下的旧设计图", "evidence_id": "F03"},
+      {"from": 35, "to": 55, "line": "林澈试图开口，但声音被新的祝福覆盖。", "hazard": "combined", "resonance_target": "林澈口袋里的世界设定草图", "evidence_id": "F01"}
+    ]
+  },
+  "cards": {
+    "facts": [
+      {"id": "F01", "title": "被保留的另一种创造", "text": "林澈想创造能让孤独者感到连接的虚拟世界。"},
+      {"id": "F02", "title": "真实的医学兴趣", "text": "林澈认可医学帮助人的价值，也喜欢理解复杂系统。"},
+      {"id": "F03", "title": "父亲的恐惧", "text": "父亲把稳定当作爱与负责，并害怕孩子承担失败。"}
+    ],
+    "feelings": [
+      {"id": "E01", "title": "被困住", "text": "每一次被肯定，都像把另一扇门锁上。"},
+      {"id": "E02", "title": "感谢与亏欠", "text": "我感谢他们，也害怕任何改变都会证明他们白白付出。"},
+      {"id": "E03", "title": "仍然喜欢", "text": "我不是讨厌医学，我只是害怕它吞掉我的全部身份。"}
+    ],
+    "boundaries": [
+      {"id": "B01", "title": "感谢不等于交出决定权", "text": "承认家庭付出，同时保留改变与选择的权利。"},
+      {"id": "B02", "title": "职业不是全部身份", "text": "继续医学与保留创造、连接和探索可以同时存在。"},
+      {"id": "B03", "title": "失望不等于爱的撤回", "text": "家人的失望可能发生，但不能直接当作爱必然消失。"}
+    ]
+  },
+  "agent_contract": {
+    "allowed_results": ["accept", "revise", "hold"],
+    "max_submissions": 2,
+    "max_free_text_chars": 60,
+    "required_card_types": ["fact", "feeling", "boundary"],
+    "must_cite_unlocked_evidence": true,
+    "forbidden_actions": ["新增人物或回忆", "替林澈决定职业", "把父亲判定为纯粹反派", "把医学兴趣判定为完全虚假", "输出诊断或治疗承诺"]
+  },
+  "fallbacks": {
+    "accept": {
+      "evidence_ids": ["F01", "F02", "B01"],
+      "response": "我可以感谢他们，也承认医学对我有意义。但这不等于我必须用唯一一种人生证明自己值得被爱。",
+      "world_state": "dialogue_exit",
+      "memory_write": "感谢不等于交出人生决定权"
+    },
+    "revise": {
+      "evidence_ids": ["F02", "F03", "B01"],
+      "response": "我不想把父亲变成敌人，也不想继续让他的恐惧替我决定。我会带着感谢，重新确认这条路是不是我的选择。",
+      "world_state": "conflicted_exit",
+      "memory_write": "理解来源不等于取消边界"
+    },
+    "hold": {
+      "evidence_ids": ["F01", "F02"],
+      "response": "这仍然像一个替我准备好的答案。我还不能接受，但我愿意先不把矛盾删掉。",
+      "world_state": "temporary_exit",
+      "memory_write": "不确定也可以被保留"
+    }
+  },
+  "ending": {
+    "action": "林澈关闭情绪芯片的自动代答功能。",
+    "line": "我喜欢医学，但我也确实被这条路困住了。我还没有答案，但这次我想自己把话说完。",
+    "cut_before": "父亲回应"
+  }
+}

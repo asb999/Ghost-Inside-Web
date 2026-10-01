@@ -1,0 +1,13 @@
+status=PLANNED
+timestamp=2026-10-01T11:37:26Z
+planner=zcode-skill-astra-planner v1.0.0
+planner_backend=codex-cli 0.158.0
+model=gpt-6-astra
+effort=xhigh
+sandbox=read-only
+task_file=.astra/task.md
+session_id=01a0f733-8c31-7922-8a66-0817245a84b3
+plan=./.astra/PLAN.md
+plan_sha256=c54de306e6c76633935e4e4a6ba53edc1d509164604ce7ddc21e985c613711c6
+exit_code=0
+contract=OK

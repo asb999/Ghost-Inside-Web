@@ -1,0 +1,16 @@
+# 白名单式：只跟踪本任务相关文件，其余全部忽略
+/*
+!.gitignore
+!*.md
+!ask_astra.sh
+!game/
+!data/
+!.astra/
+!.workbuddy/
+# 大文件与产物
+Godot_Project.zip
+*.zip
+game/web/node_modules/
+game/web/dist/
+.astra/reports/
+.astra/harness/fixtures/tmp/
