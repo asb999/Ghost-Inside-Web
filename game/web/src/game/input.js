@@ -2,11 +2,13 @@
 const KEYMAP = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
-  ArrowUp: 'jump',
   Space: 'jump',
   KeyA: 'left',
   KeyD: 'right',
-  KeyW: 'jump',
+  ArrowUp: 'forward',
+  ArrowDown: 'back',
+  KeyW: 'forward',
+  KeyS: 'back',
   Enter: 'interact',
   KeyE: 'interact'
 };

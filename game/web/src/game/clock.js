@@ -41,11 +41,18 @@ export class GameClock {
   }
 
   // 测试推进：每次最多 1000ms，按固定步长拆分（正式更新逻辑）
+  // 不受 maxFrameMs 截断——那是防真实帧瞬移的，测试推进是显式指令
   advanceTestClock(ms) {
     if (ms <= 0 || !Number.isFinite(ms)) return;
     this.testMode = true;
     this.paused = false;
-    this.advance(Math.min(ms, 1000));
+    let left = Math.min(ms, 1000);
+    while (left > 1e-6) {
+      const step = Math.min(this.fixedStepMs, left);
+      this.simMs += step;
+      this._update?.(step);
+      left -= step;
+    }
   }
 
   stop() {

@@ -1,5 +1,4 @@
 // main.js — 装配：启动页 → 状态机驱动的节拍切换 → 测试钩子（仅正式输入）
-import * as THREE from 'three';
 import rawCase from '../../data/cases/case_001_optimal_life.json';
 import { normalizeCase } from './data/normalize-case.js';
 import { Machine } from './game/machine.js';
@@ -14,7 +13,6 @@ import { resolveFeedback } from './agent/feedback.js';
 import { Audio } from './audio/audio.js';
 import { GardenScene } from './scenes/garden.js';
 import { CollectorScene } from './scenes/collector.js';
-import { placeholderMesh } from './assets/manifest.js';
 
 const caseView = normalizeCase(rawCase);
 const machine = new Machine(caseView);
@@ -32,13 +30,19 @@ const uiRoot = document.getElementById('ui');
 const story = new StoryUI(uiRoot, machine, caseView);
 const statementUI = new StatementUI(uiRoot, machine, caseView);
 
-// 速度线（掌声加速的视觉反馈）
+// 速度线（掌声加速的视觉反馈，机制即隐喻：被夸=被推着走）
 const speedLines = document.createElement('div');
 speedLines.className = 'speed-lines';
 uiRoot.appendChild(speedLines);
 speedLines.toggle = (on) => speedLines.classList.toggle('on', on);
 
-let activeScene = null; // GardenScene | CollectorScene
+// 只读遥测（供真实键鼠验收观察，不含任何可写状态）
+const telemetry = document.createElement('div');
+telemetry.id = 'telemetry';
+telemetry.style.display = 'none';
+uiRoot.appendChild(telemetry);
+
+let activeScene = null;
 let lastFrameStats = { calls: 0, triangles: 0 };
 let providerClient = resolveProviderClient();
 
@@ -56,7 +60,7 @@ function resolveProviderClient() {
         signal
       });
       if (!resp.ok) throw new Error(`http_${resp.status}`);
-      const text = await resp.text(); // 有限大小读取在 validate 中再卡
+      const text = await resp.text();
       if (text.length > 64 * 1024) throw new Error('too_large_body');
       return JSON.parse(text);
     }
@@ -73,6 +77,32 @@ function clearScene() {
     disposeObject(c);
   });
   speedLines.toggle(false);
+}
+
+// 表态统一管线：UI 提交与测试钩子共用
+async function submitPipeline(res) {
+  const raw = await requestFeedback({
+    provider: providerClient,
+    request: {
+      statement: res.statement,
+      evidence_ids: res.evidence_ids,
+      allowed_results: caseView.contract.allowedResults
+    },
+    validate: (body) => validateProviderResponse(body, {
+      templates: caseView.feedbackTemplates,
+      unlocked: [...machine.unlockedCards]
+    }),
+    fallbacks: caseView.fallbacks,
+    timeoutMs: 8000
+  });
+  const fb = resolveFeedback(raw, caseView);
+  machine.applyFeedback(fb);
+  statementUI.showFeedback(machine.feedback, {
+    onContinue: () => {
+      statementUI.destroy();
+      machine.advance('epilogue');
+    }
+  });
 }
 
 function onBeatChange(m) {
@@ -100,7 +130,10 @@ function onBeatChange(m) {
   } else if (m.beat === 'collector') {
     clearScene();
     story.ghostHud(caseView.ghostLines.collector_enter);
-    activeScene = new CollectorScene({ scene, machine, input, audio, hud: { setDefense: (v) => { story.ghostHud(`Ghost：目标防御值 ${v}。建议保持距离。`); } } });
+    activeScene = new CollectorScene({
+      scene, machine, input, audio,
+      hud: { setDefense: (v) => story.ghostHud(`Ghost：目标防御值 ${v}。建议保持距离。`) }
+    });
     activeScene.start();
   } else if (m.beat === 'dinner') {
     clearScene();
@@ -113,28 +146,7 @@ function onBeatChange(m) {
   } else if (m.beat === 'statement') {
     clearScene();
     story.ghostHud(caseView.ghostLines.statement_guide);
-    statementUI.show({
-      onSubmit: async (res) => {
-        const raw = await requestFeedback({
-          provider: providerClient,
-          request: { statement: res.statement, evidence_ids: res.evidence_ids, allowed_results: caseView.contract.allowedResults },
-          validate: (body) => validateProviderResponse(body, {
-            templates: caseView.feedbackTemplates,
-            unlocked: [...machine.unlockedCards]
-          }),
-          fallbacks: caseView.fallbacks,
-          timeoutMs: 8000
-        });
-        const fb = resolveFeedback(raw, caseView);
-        machine.applyFeedback(fb);
-        statementUI.showFeedback(machine.feedback, {
-          onContinue: () => {
-            statementUI.destroy();
-            machine.advance('epilogue');
-          }
-        });
-      }
-    });
+    statementUI.show({ onSubmit: (res) => submitPipeline(res) });
   } else if (m.beat === 'epilogue') {
     clearScene();
     story.ghostHud(caseView.ghostLines.epilogue_enter);
@@ -146,21 +158,30 @@ function onBeatChange(m) {
   }
 }
 
-machine.onChange(onBeatChange);
+let lastBeat = 'boot';
+machine.onChange((m) => {
+  // unlock 等操作也会 _emit：只有节拍真正变化时才切换场景/重建 UI
+  if (m.beat === lastBeat) return;
+  lastBeat = m.beat;
+  onBeatChange(m);
+});
 
-// 主循环：3D 场景更新 + 渲染统计 + 污染时钟
-clock.start((dt) => {
-  activeScene?.update(dt / 1000);
-  story.tickPollution(dt);
+clock.start((dtMs) => {
+  activeScene?.update(dtMs / 1000);
+  story.tickPollution(dtMs);
   renderer.info.reset();
   renderer.render(scene, camera);
   lastFrameStats = {
     calls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles
   };
+  const p = activeScene?.player?.position;
+  telemetry.dataset.beat = machine.beat;
+  telemetry.dataset.x = p ? p.x.toFixed(2) : '';
+  telemetry.dataset.y = p ? p.y.toFixed(2) : '';
+  telemetry.dataset.z = p ? p.z.toFixed(2) : '';
 });
 
-// 启动页（首次用户点击：解锁音频 + 启动状态机）
 function showStart() {
   const el = document.createElement('div');
   el.className = 'overlay';
@@ -170,7 +191,7 @@ function showStart() {
   card.innerHTML = `<div class="tag">GHOST INSIDE：心灵调理师</div>
     <div class="line">第一章 · 最优人生</div>
     <div class="line ghost">情绪调试系统 · 情绪调试师在线</div>
-    <div class="small">WebGL 演示 · 键盘 ←→ 移动 / 空格 跳跃 / E 交互 · 建议横屏</div>`;
+    <div class="small">WebGL 演示 · ←→ 移动 / 空格 跳跃 / ↑↓ 前后（战斗）/ E 交互 · 建议横屏</div>`;
   const btn = document.createElement('button');
   btn.id = 'btn-start';
   btn.textContent = '开始接入';
@@ -195,15 +216,24 @@ if (params.get('test') === '1') {
       snapshot: () => {
         const s = machine.readSnapshot();
         s.stats = { ...lastFrameStats };
-        s.rendererMode = 'webgl2';
+        s.hasPlayer = Boolean(activeScene?.player);
+        s.inputActions = [...input.actions];
+        if (activeScene?.player) {
+          s.player = {
+            x: activeScene.player.position.x,
+            y: activeScene.player.position.y,
+            z: activeScene.player.position.z
+          };
+        }
         return structuredClone(s);
       },
       input: (action, pressed) => input.setAction(action, pressed),
       stepSimulation: (ms) => clock.advanceTestClock(ms),
-      submitJudgment: (text, evidenceIds) => machine.submitJudgment(text, evidenceIds)
+      submitJudgment: (text, evidenceIds) => {
+        const res = machine.submitJudgment(text, evidenceIds);
+        if (res.ok) submitPipeline(res);
+        return res;
+      }
     })
   });
 }
-
-void placeholderMesh;
-void THREE;

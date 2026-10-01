@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import { placeholderMesh } from '../assets/manifest.js';
 
 const LANE = 4;          // |x| 上限
-const GRAVITY = 22;
-const JUMP_V = 8;
+const GRAVITY = 20;
+const JUMP_V = 9;
 const BASE_SPEED = 6;
 const APPLAUSE_SPEED = 9.6;   // 掌声加速（机制即隐喻）
 const COURSE_END = 96;
@@ -143,9 +143,9 @@ export class GardenScene {
     let best = this.checkpoints[0];
     for (const c of this.checkpoints) if (c <= p.z + 0.5) best = c;
     this.checkpointZ = best;
+    this.machine.events.push('garden_respawn', { z: this.checkpointZ, hitZ: +p.z.toFixed(2), hitY: +p.y.toFixed(2), jumpDown: this.input.isDown('jump') });
     p.set(0, 1, this.checkpointZ);
     this.vy = 0;
-    this.machine.events.push('garden_respawn', { z: this.checkpointZ });
   }
 
   dispose() {

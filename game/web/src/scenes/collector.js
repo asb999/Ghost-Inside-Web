@@ -103,6 +103,8 @@ export class CollectorScene {
 
     if (this.input.isDown('left')) p.x = Math.max(-ARENA_R, p.x - 7 * dt);
     if (this.input.isDown('right')) p.x = Math.min(ARENA_R, p.x + 7 * dt);
+    if (this.input.isDown('forward')) p.z = Math.max(5 - ARENA_R, p.z - 7 * dt);
+    if (this.input.isDown('back')) p.z = Math.min(5 + ARENA_R, p.z + 7 * dt);
     if (this.input.isDown('jump') && this.onGround) { this.vy = JUMP_V; this.onGround = false; }
     this.vy -= GRAVITY * dt;
     p.y += this.vy * dt;

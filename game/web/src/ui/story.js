@@ -115,7 +115,7 @@ export class StoryUI {
     const btn = document.createElement('button');
     btn.textContent = '继续观察';
     btn.dataset.action = 'dinner-cycle';
-    btn.addEventListener('click', () => { btn.disabled = true; this._cycle(card, idx + 1); });
+    btn.addEventListener('click', () => { btn.remove(); this._cycle(card, idx + 1); });
     card.appendChild(btn);
   }
 

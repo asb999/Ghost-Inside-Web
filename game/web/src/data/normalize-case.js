@@ -45,7 +45,7 @@ export function normalizeCase(raw) {
     cards: [...unlockByCard.values()],
     unlockByCard,
     beats,
-    opening: normalizeOpening(raw.opening),
+    opening: { steps: normalizeOpening(raw.opening) },
     garden: raw.garden,
     collector: raw.collector,
     dinner: raw.dinner,
