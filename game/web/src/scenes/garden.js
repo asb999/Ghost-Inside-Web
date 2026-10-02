@@ -36,7 +36,7 @@ const CLUE_Z = 93;
 const GHOST_PIN_DELAY_S = 0.15; // 进入门区后固定前的演出延迟（玩家在移动，延迟必须短于观察窗口）
 
 export class GardenScene {
-  constructor({ scene, machine, input, audio, speedLines, hud, objective }) {
+  constructor({ scene, machine, input, audio, speedLines, hud, objective, onTutorialEnd }) {
     this.scene = scene;
     this.machine = machine;
     this.input = input;
@@ -44,6 +44,9 @@ export class GardenScene {
     this.speedLines = speedLines;
     this.hud = hud;
     this.objective = objective;
+    this.onTutorialEnd = onTutorialEnd;
+    // 新手教程（只在花园开头出现一次，完成后不再打扰）：0=移动 1=跳跃 2=互动
+    this.tutorial = { active: true, step: 0 };
     this.group = new THREE.Group();
     this.done = false;
     this._timers = [];
@@ -156,17 +159,19 @@ export class GardenScene {
     const p = this.player.position;
     this.time += dt;
 
-    // 阶段推进（每阶段只进入一次，重复进事件）
+    // 阶段推进（教学期间停在第 0 阶段；每阶段只进入一次）
     const prevStage = this.stage;
-    this.stage = p.z < STAGE1_END ? 1 : p.z < STAGE2_END ? 2 : 3;
+    this.stage = this.tutorial.active ? 0 : (p.z < STAGE1_END ? 1 : p.z < STAGE2_END ? 2 : 3);
     if (this.stage !== prevStage) {
       this.machine.events.push('garden_stage', { stage: this.stage });
       this.hud?.(STAGE_HINTS[this.stage]);
     }
 
-    // 自动前进 + 掌声加速（机制即隐喻）
-    const inApplause = this._inApplause(p.z);
-    const speed = inApplause ? APPLAUSE_SPEED : BASE_SPEED;
+    // 自动前进 + 掌声加速（机制即隐喻）；教学第 3 步慢速靠近练习终端，其余教学时间停住
+    const inApplause = !this.tutorial.active && this._inApplause(p.z);
+    const speed = this.tutorial.active
+      ? (this.tutorial.step >= 2 ? 3 : 0)
+      : (inApplause ? APPLAUSE_SPEED : BASE_SPEED);
     this.speedLines?.toggle(inApplause);
     p.z += speed * dt;
 
@@ -183,8 +188,8 @@ export class GardenScene {
     p.y += this.vy * dt;
     if (p.y <= 1) { p.y = 1; this.vy = 0; this.onGround = true; }
 
-    // 障碍碰撞：一阶段无操作失败惩罚（P0-01）；二/三阶段回检查点（P0-03 局部重试）
-    for (const o of this.obstacles) {
+    // 障碍碰撞（教学期间无危险）：一阶段无操作失败惩罚（P0-01）；二/三阶段回检查点（P0-03 局部重试）
+    for (const o of this.tutorial.active ? [] : this.obstacles) {
       if (o.z >= STAGE1_END && Math.abs(p.z - o.z) < 0.6 && p.y < 1.5) {
         this._respawn('obstacle');
         break;
@@ -193,7 +198,7 @@ export class GardenScene {
 
     // 赞许弹幕（二/三阶段新条件）：弹幕墙开启期贴地穿过 → 回检查点；
     // 跳过或等窗口期通过均可（开启期弹幕墙可见=预告）
-    for (const w of WAVES) {
+    for (const w of this.tutorial.active ? [] : WAVES) {
       if (Math.abs(p.z - w.z) < 1.0 && p.y < 1.5 && this._waveActive(w)) {
         this._respawn('wave');
         break;
@@ -210,9 +215,68 @@ export class GardenScene {
       cam.lookAt(p.x * 0.4, 1.4, p.z + 4);
     }
 
-    this._updateGate(dt, p);
+    if (this.tutorial.active) this._updateTutorial(dt, p);
+    else this._updateGate(dt, p);
     this.clue.position.x = this._clueX();
     this.clue.rotation.y += dt * 2;
+  }
+
+  // ── 新手教程：三步教完 ←→ / 空格 / E，之后全程不再强加提示 ──
+  _updateTutorial(dt, p) {
+    const t = this.tutorial;
+    if (t.step === 0) {
+      this.objective?.('教学 1/3 · 按 ← 或 →（或 A/D）左右移动一下');
+      if (this.input.isDown('left') || this.input.isDown('right')) this._advanceTutorial(1);
+    } else if (t.step === 1) {
+      this.objective?.('教学 2/3 · 按 空格 跳一下');
+      if (this.input.isDown('jump')) this._advanceTutorial(2);
+    } else {
+      this.objective?.('教学 3/3 · 走向发光的练习信标，靠近后按 E');
+      if (p.z > 6.8) p.z = 6.8; // 信标前停住，等玩家按 E
+      // 交互（边沿触发）与练习信标
+      const interactNow = this.input.isDown('interact');
+      const interactPressed = interactNow && !this._interactDown;
+      this._interactDown = interactNow;
+      if (this._practice && interactPressed && p.z > this._practice.position.z - 2.2) {
+        this.machine.events.push('tutorial_done', {});
+        this._endTutorial();
+      }
+    }
+  }
+
+  _advanceTutorial(n) {
+    this.tutorial.step = n;
+    this.machine.events.push('tutorial_step', { step: n });
+    if (n === 2 && !this._practice) {
+      // 练习信标：发光、无危险，走过去按 E 即完成
+      this._practice = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.55),
+        new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95 })
+      );
+      this._practice.position.set(0, 0.9, 7);
+      this.group.add(this._practice);
+      this.objective?.('教学 3/3 · 走向发光的练习信标，靠近后按 E');
+    }
+  }
+
+  _endTutorial() {
+    if (!this.tutorial.active) return;
+    this.tutorial.active = false;
+    this.tutorial.step = 3;
+    if (this._practice) {
+      this.group.remove(this._practice);
+      this._practice.geometry.dispose();
+      this._practice.material.dispose();
+      this._practice = null;
+    }
+    this.objective?.('目标 · 穿过记忆花园，关闭掌声终端');
+    this.hud?.('教学完成。前面有掌声、弹幕和一条被涂改的记录——走吧。');
+    this.onTutorialEnd?.();
+  }
+
+  skipTutorial() {
+    this.machine.events.push('tutorial_skipped', {});
+    this._endTutorial();
   }
 
   _updateGate(dt, p) {
@@ -307,6 +371,7 @@ export class GardenScene {
       stage: this.stage,
       cluePinned: this.pinned,
       clueObserved: this.clueObserved,
+      tutorialActive: this.tutorial.active,
       waveActive: this._waveActive(WAVES[0])
     };
   }

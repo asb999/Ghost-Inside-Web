@@ -82,6 +82,9 @@ async function startCase(page) {
     await sleep(60);
   }
   assertOk((await snap(page)).beat === 'garden', '未进入花园节拍');
+  // 新手教程：点击「跳过教学」（正式 UI 通道）
+  await page.evaluate(() => document.getElementById('tutorial-skip')?.click());
+  await sleep(80);
 }
 
 // 跳跃越过障碍与赞许弹幕（一阶段障碍 24 无惩罚，不需跳）

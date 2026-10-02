@@ -126,16 +126,29 @@ async function submitPipeline(res) {
 const OBJECTIVES = {
   boot: '',
   life_slice: '目标 · 接入林澈的记忆',
-  garden: '目标 · 穿过记忆花园，关闭掌声终端',
-  collector: '目标 · 让赞许收集者放下防御（防御归零后靠近按 E）',
-  dinner: '目标 · 观察饭桌回忆，找出谁删了出口',
-  pollution: '目标 · 守住还没被吞掉的选项',
-  statement: '目标 · 用证据说出你自己的判断',
-  epilogue: '目标 · 把答案留给林澈',
+  garden: '目标 1/5 · 穿过记忆花园，关闭掌声终端',
+  collector: '目标 2/5 · 让赞许收集者放下防御（防御归零后靠近按 E）',
+  dinner: '目标 3/5 · 观察饭桌回忆，找出谁删了出口',
+  pollution: '目标 3/5 · 守住还没被吞掉的选项',
+  statement: '目标 4/5 · 用证据说出你自己的判断',
+  epilogue: '目标 5/5 · 把答案留给林澈',
   closed: '调理结束 · 感谢试玩'
 };
 
+function showTutorialSkip() {
+  removeTutorialSkip();
+  const btn = document.createElement('button');
+  btn.id = 'tutorial-skip';
+  btn.textContent = '跳过教学 »';
+  btn.addEventListener('click', () => activeScene?.skipTutorial?.());
+  uiRoot.appendChild(btn);
+}
+function removeTutorialSkip() {
+  document.getElementById('tutorial-skip')?.remove();
+}
+
 function onBeatChange(m) {
+  removeTutorialSkip();
   story.beatLabel({
     life_slice: '序 · 生活切片',
     garden: '一幕 · 完美花园',
@@ -155,12 +168,15 @@ function onBeatChange(m) {
     story.showOpening();
   } else if (m.beat === 'garden') {
     clearScene();
+    removeTutorialSkip();
     story.ghostHud(caseView.ghostLines.garden_enter);
     activeScene = new GardenScene({
       scene, machine, input, audio, speedLines,
       hud: (t) => story.ghostHud(t),
-      objective: (t) => story.setObjective(t)
+      objective: (t) => story.setObjective(t),
+      onTutorialEnd: () => removeTutorialSkip()
     });
+    showTutorialSkip();
     story._overlay?.remove(); story._overlay = null;
   } else if (m.beat === 'collector') {
     clearScene();

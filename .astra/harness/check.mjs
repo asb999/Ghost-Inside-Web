@@ -160,6 +160,9 @@ async function clickThroughOpening(page) {
 async function driveGarden(page) {
   // 模拟时间推进 + 跳跃越过障碍与赞许弹幕；终点协作点：
   // Ghost 自动固定线索 → 线索旁按 E 观察 → 终端按 E 关闭（关闭后等真实 500ms 延迟）
+  // 新手教程：点击「跳过教学」按钮（正式 UI 通道），保证后续驱动不被教学段挡住
+  await page.evaluate(() => document.getElementById('tutorial-skip')?.click());
+  await sleep(80);
   for (let i = 0; i < 800; i++) {
     const s = await page.evaluate(() => {
       const g = window.__game;
