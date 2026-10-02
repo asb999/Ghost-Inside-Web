@@ -158,31 +158,68 @@ async function clickThroughOpening(page) {
 }
 
 async function driveGarden(page) {
-  // 模拟时间推进 + 跳跃越过障碍；终点按 E 关闭终端
-  for (let i = 0; i < 600; i++) {
+  // 模拟时间推进 + 跳跃越过障碍与赞许弹幕；终点协作门：
+  // Q 请求 Ghost 固定线索 → E 观察 → E 关闭终端（关闭后等真实 500ms 延迟）
+  for (let i = 0; i < 800; i++) {
     const s = await page.evaluate(() => {
       const g = window.__game;
       const snap = g.snapshot();
-      return { beat: snap.beat, z: snap.player?.z ?? 0, y: snap.player?.y ?? 1 };
+      return {
+        beat: snap.beat,
+        z: snap.player?.z ?? 0,
+        y: snap.player?.y ?? 1,
+        scene: snap.scene ?? null,
+        closed: snap.history.some((e) => e.id === 'terminal_closed')
+      };
     });
     if (s.beat !== 'garden') return;
-    if (s.z >= 92) {
-      // 按住交互的同时必须推进模拟（测试模式下 RAF 已停），终端关闭后等真实 500ms 延迟
-      await page.evaluate(() => window.__game.input('interact', true));
-      await page.evaluate(() => window.__game.stepSimulation(200));
+    if (s.closed) {
       await page.waitForTimeout(700);
-      await page.evaluate(() => window.__game.input('interact', false));
+      return;
+    }
+    const sc = s.scene ?? {};
+    if (s.z >= 91 && !s.closed) {
+      if (!sc.clueObserved) {
+        if (!sc.cluePinned) {
+          await page.evaluate(() => {
+            window.__game.input('support', true);
+            window.__game.stepSimulation(100);
+            window.__game.input('support', false);
+          });
+        } else {
+          await page.evaluate(() => {
+            window.__game.input('interact', true);
+            window.__game.stepSimulation(100);
+            window.__game.input('interact', false);
+          });
+        }
+        continue;
+      }
+      // 已观察：按 E 关闭终端（按住交互的同时必须推进模拟；测试模式下 RAF 已停）
+      await page.evaluate(() => {
+        window.__game.input('interact', true);
+        window.__game.stepSimulation(200);
+      });
+      await page.waitForTimeout(700);
+      await page.evaluate(() => {
+        window.__game.input('interact', false);
+        window.__game.stepSimulation(100);
+      });
       continue;
     }
-    const nextObs = [24, 42, 60].find((z) => z > s.z - 0.4);
-    if (nextObs !== undefined && nextObs - s.z < 3.0 && s.y <= 1.01) {
-      await page.evaluate(() => window.__game.input('jump', true));
-      await page.evaluate(() => window.__game.stepSimulation(400));
-      await page.evaluate(() => window.__game.input('jump', false));
+    // 障碍（44/58）与赞许弹幕（50/84）跳跃越过；24 在一阶段无惩罚、不需跳
+    const jumpZ = [44, 50, 58, 84].find((z) => z > s.z - 0.4);
+    if (jumpZ !== undefined && jumpZ - s.z < 3.0 && s.y <= 1.01) {
+      await page.evaluate(() => {
+        window.__game.input('jump', true);
+        window.__game.stepSimulation(400);
+        window.__game.input('jump', false);
+      });
       continue;
     }
     await page.evaluate(() => window.__game.stepSimulation(300));
   }
+  throw new Error('garden 800 轮未完成');
 }
 
 async function driveCollector(page) {

@@ -1,5 +1,6 @@
-// garden.js — 一幕「完美花园」：固定镜头自动前进，左右/跳跃，检查点，
-// 掌声加速区（机制即隐喻：被夸=被推着走），终点掌声终端（关闭后延迟 500ms 静音）。
+// garden.js — 一幕「完美花园」：三阶段机制变奏（引入→新条件→组合），
+// 终点「漂移线索」协作门（玩家请求→Ghost 固定→玩家观察→关闭终端），
+// 掌声加速区（机制即隐喻：被夸=被推着走），检查点局部重试（重试不倒退叙事状态）。
 import * as THREE from 'three';
 import { placeholderMesh } from '../assets/manifest.js';
 
@@ -8,22 +9,54 @@ const GRAVITY = 20;
 const JUMP_V = 9;
 const BASE_SPEED = 6;
 const APPLAUSE_SPEED = 9.6;   // 掌声加速（机制即隐喻）
-const COURSE_END = 96;
 const TERMINAL_Z = 96;
 
+// 三阶段变奏（P0-01）：一阶段 z<32 只引入掌声加速且无操作失败惩罚；
+// 二阶段 z<64 新增唯一条件「赞许弹幕」（间歇横扫，可跳跃或横向避让）；
+// 三阶段 z≥64 组合前两阶段条件（掌声加速区 + 赞许弹幕）。
+const STAGE1_END = 32;
+const STAGE2_END = 64;
+const STAGE_HINTS = {
+  1: '花园里只有掌声——被「夸」着走，会更快、更难控制。',
+  2: '赞许弹幕出现了。掌声不会停——看准时机跳过去。',
+  3: '它们一起来了：掌声加速，加上赞许弹幕。'
+};
+// 赞许弹幕（二/三阶段新条件）：全车道间歇弹幕墙，开启期可见（预告），
+// 贴地穿过 → 回检查点；跳过或等窗口期通过均可
+const WAVES = [
+  { z: 50, period: 3.2, duty: 0.5, phase: 0 },
+  { z: 84, period: 3.2, duty: 0.5, phase: 1.6 }
+];
+
+// 协作门（P0-02）：线索持续漂移、无法观察；玩家按 Q 请求支援 → Ghost 将其
+// 固定一段窗口 → 玩家在窗口内按 E 观察后才可关闭终端。缺任一侧都无法完成。
+const GATE_Z = 91;
+const CLUE_Z = 93;
+const GHOST_HOLD_S = 3;
+
 export class GardenScene {
-  constructor({ scene, machine, input, audio, speedLines }) {
+  constructor({ scene, machine, input, audio, speedLines, hud }) {
     this.scene = scene;
     this.machine = machine;
     this.input = input;
     this.audio = audio;
     this.speedLines = speedLines;
+    this.hud = hud;
     this.group = new THREE.Group();
     this.done = false;
     this._timers = [];
+    this.time = 0;
+    this.stage = 0;
+    this.pinRemaining = 0;
+    this.pinnedX = 0;
+    this.clueObserved = false;
+    this._interactDown = false;
+    this._supportDown = false;
+    this._lastBlockedAt = -10;
 
     this._buildCourse();
     this._buildPlayer();
+    this._buildGate();
     scene.add(this.group);
   }
 
@@ -41,24 +74,34 @@ export class GardenScene {
       this.group.add(col);
     }
 
-    // 三个空间障碍（跨栏）
+    // 空间障碍：24 在一阶段（无失败惩罚），44/58 在二阶段（碰撞回检查点）
     this.obstacles = [];
     const obsMat = new THREE.MeshLambertMaterial({ color: 0x51708f });
-    for (let i = 0; i < 3; i++) {
-      const z = 24 + i * 18;
+    for (const z of [24, 44, 58]) {
       const obs = new THREE.Mesh(new THREE.BoxGeometry(8, 0.9, 0.6), obsMat);
       obs.position.set(0, 0.45, z);
       this.group.add(obs);
       this.obstacles.push({ z, mesh: obs });
     }
 
-    // 掌声加速区（两条）：站在里面会被「夸」得更快、更难控制
+    // 掌声加速区：一阶段一条 + 三阶段一条（组合条件之一）
     this.applauseZones = [
       { from: 14, to: 20 },
-      { from: 40, to: 48 }
+      { from: 70, to: 78 }
     ];
 
-    // 检查点（掉落/碰撞后回到这里，不重播整章）
+    // 赞许弹幕墙可视化：开启期发光=预告，窗口期近乎透明
+    this.waveMeshes = WAVES.map((w) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(12, 1.2, 0.25),
+        new THREE.MeshBasicMaterial({ color: 0xd4484f, transparent: true, opacity: 0 })
+      );
+      mesh.position.set(0, 0.9, w.z);
+      this.group.add(mesh);
+      return { cfg: w, mesh };
+    });
+
+    // 检查点（掉落/碰撞后回到这里，不重播整章；与弹幕保持重试距离）
     this.checkpoints = [0, 36, 72];
 
     // 掌声终端
@@ -74,6 +117,16 @@ export class GardenScene {
     this.terminalGlow = glow;
   }
 
+  _buildGate() {
+    // 漂移线索：观察前一直在 x 方向往复漂移
+    this.clue = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.35),
+      new THREE.MeshBasicMaterial({ color: 0x8fe3c0, transparent: true, opacity: 0.9 })
+    );
+    this.clue.position.set(0, 1.2, CLUE_Z);
+    this.group.add(this.clue);
+  }
+
   _buildPlayer() {
     this.player = placeholderMesh('lin_che');
     this.player.position.set(0, 1, 2);
@@ -87,13 +140,31 @@ export class GardenScene {
     return this.applauseZones.some((a) => z > a.from && z < a.to);
   }
 
+  _waveActive(w) {
+    return ((this.time + w.phase) % w.period) < w.period * w.duty;
+  }
+
+  _clueX() {
+    return this.pinRemaining > 0 ? this.pinnedX : Math.sin(this.time * 1.5) * 3;
+  }
+
   update(dt) {
     if (this.done) return;
     const p = this.player.position;
+    this.time += dt;
+
+    // 阶段推进（每阶段只进入一次，重复进事件）
+    const prevStage = this.stage;
+    this.stage = p.z < STAGE1_END ? 1 : p.z < STAGE2_END ? 2 : 3;
+    if (this.stage !== prevStage) {
+      this.machine.events.push('garden_stage', { stage: this.stage });
+      this.hud?.(STAGE_HINTS[this.stage]);
+    }
 
     // 自动前进 + 掌声加速（机制即隐喻）
-    const speed = this._inApplause(p.z) ? APPLAUSE_SPEED : BASE_SPEED;
-    this.speedLines?.toggle(this._inApplause(p.z));
+    const inApplause = this._inApplause(p.z);
+    const speed = inApplause ? APPLAUSE_SPEED : BASE_SPEED;
+    this.speedLines?.toggle(inApplause);
     p.z += speed * dt;
 
     // 左右
@@ -109,21 +180,75 @@ export class GardenScene {
     p.y += this.vy * dt;
     if (p.y <= 1) { p.y = 1; this.vy = 0; this.onGround = true; }
 
-    // 障碍碰撞 → 回检查点
+    // 障碍碰撞：一阶段无操作失败惩罚（P0-01）；二/三阶段回检查点（P0-03 局部重试）
     for (const o of this.obstacles) {
-      if (Math.abs(p.z - o.z) < 0.6 && p.y < 1.5) {
-        this._respawn();
+      if (o.z >= STAGE1_END && Math.abs(p.z - o.z) < 0.6 && p.y < 1.5) {
+        this._respawn('obstacle');
         break;
       }
+    }
+
+    // 赞许弹幕（二/三阶段新条件）：弹幕墙开启期贴地穿过 → 回检查点；
+    // 跳过或等窗口期通过均可（开启期弹幕墙可见=预告）
+    for (const w of WAVES) {
+      if (Math.abs(p.z - w.z) < 1.0 && p.y < 1.5 && this._waveActive(w)) {
+        this._respawn('wave');
+        break;
+      }
+    }
+    for (const wm of this.waveMeshes) {
+      wm.mesh.material.opacity = this._waveActive(wm.cfg) ? 0.35 : 0.06;
     }
 
     // 相机跟随
     const cam = this.scene.userData.camera;
     if (cam) cam.position.set(p.x * 0.4, 3.6, p.z - 8.5);
 
-    // 终点终端：抵达后交互关闭
-    if (p.z >= TERMINAL_Z - 2 && !this.machine.terminalClosed) {
-      if (this.input.isDown('interact')) {
+    this._updateGate(dt, p);
+    this.clue.position.x = this._clueX();
+  }
+
+  _updateGate(dt, p) {
+    // Ghost 保持窗口随模拟时间消耗；离开门区即解除
+    if (this.pinRemaining > 0) {
+      this.pinRemaining -= dt;
+      if (this.pinRemaining <= 0) {
+        this.pinRemaining = 0;
+        this.machine.events.push('ghost_pin_expired', {});
+      }
+    }
+    if (p.z < GATE_Z - 1 && this.pinRemaining > 0) this.pinRemaining = 0;
+
+    // 边沿触发：一次按压只产生一次动作
+    const supportNow = this.input.isDown('support');
+    const supportPressed = supportNow && !this._supportDown;
+    this._supportDown = supportNow;
+    const interactNow = this.input.isDown('interact');
+    const interactPressed = interactNow && !this._interactDown;
+    this._interactDown = interactNow;
+
+    if (p.z >= GATE_Z && !this.clueObserved) {
+      if (supportPressed && this.pinRemaining <= 0) {
+        this.pinnedX = this._clueX();
+        this.pinRemaining = GHOST_HOLD_S;
+        this.machine.events.push('ghost_support', { hold_s: GHOST_HOLD_S });
+        this.hud?.('Ghost：抓住了。它停住了——快看（E）。');
+      } else if (this.pinRemaining > 0 && interactPressed) {
+        this.clueObserved = true;
+        this.machine.events.push('clue_observed', {});
+        this.hud?.('你看见了线索的内容。现在可以关掉终端（E）。');
+      }
+    }
+
+    // 终点终端：必须先完成协作观察；未观察时按 E 只得到提示（不惩罚）
+    if (p.z >= TERMINAL_Z - 2 && !this.machine.terminalClosed && interactPressed) {
+      if (!this.clueObserved) {
+        if (this.time - this._lastBlockedAt > 1) {
+          this._lastBlockedAt = this.time;
+          this.machine.events.push('terminal_blocked', {});
+          this.hud?.('线索仍在漂移——先请 Ghost 固定它（Q），再看（E）。');
+        }
+      } else {
         this.machine.terminalClosed = true;
         this.machine.events.push('terminal_closed', {});
         // 掌声延迟 500ms 才停（恐怖来自延迟）
@@ -138,14 +263,27 @@ export class GardenScene {
     }
   }
 
-  _respawn() {
+  // 局部重试（P0-03）：只重置操作暂态（位置/速度/Ghost 保持状态）；
+  // 已观察的线索、已推进的节拍与叙事状态一律不回退，无重复奖励/污染。
+  _respawn(reason) {
     const p = this.player.position;
     let best = this.checkpoints[0];
     for (const c of this.checkpoints) if (c <= p.z + 0.5) best = c;
     this.checkpointZ = best;
-    this.machine.events.push('garden_respawn', { z: this.checkpointZ, hitZ: +p.z.toFixed(2), hitY: +p.y.toFixed(2), jumpDown: this.input.isDown('jump') });
+    this.pinRemaining = 0;
+    this.machine.events.push('garden_respawn', { reason, z: this.checkpointZ, hitZ: +p.z.toFixed(2), hitY: +p.y.toFixed(2), jumpDown: this.input.isDown('jump') });
     p.set(0, 1, this.checkpointZ);
     this.vy = 0;
+  }
+
+  // 测试/演示只读状态（window.__game.snapshot().scene）
+  testState() {
+    return {
+      stage: this.stage,
+      cluePinned: this.pinRemaining > 0,
+      clueObserved: this.clueObserved,
+      waveActive: this._waveActive(WAVES[0])
+    };
   }
 
   dispose() {

@@ -125,7 +125,7 @@ function onBeatChange(m) {
   } else if (m.beat === 'garden') {
     clearScene();
     story.ghostHud(caseView.ghostLines.garden_enter);
-    activeScene = new GardenScene({ scene, machine, input, audio, speedLines });
+    activeScene = new GardenScene({ scene, machine, input, audio, speedLines, hud: (t) => story.ghostHud(t) });
     story._overlay?.remove(); story._overlay = null;
   } else if (m.beat === 'collector') {
     clearScene();
@@ -218,6 +218,7 @@ if (params.get('test') === '1') {
         s.stats = { ...lastFrameStats };
         s.hasPlayer = Boolean(activeScene?.player);
         s.inputActions = [...input.actions];
+        if (activeScene?.testState) s.scene = activeScene.testState();
         if (activeScene?.player) {
           s.player = {
             x: activeScene.player.position.x,
