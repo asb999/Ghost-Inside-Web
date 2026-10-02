@@ -11,7 +11,7 @@ export function webglSupported() {
   }
 }
 
-// 精确诊断：Three.js r186 只支持 WebGL2；内嵌视图可能只给 WebGL1
+// 精确探测：Three.js r186 只支持 WebGL2；内嵌视图可能只给 WebGL1
 export function webglDiagnostics() {
   const out = { webgl2: false, webgl1: false, renderer: '' };
   try {
