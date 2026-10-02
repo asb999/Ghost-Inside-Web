@@ -116,24 +116,31 @@ function startMock() {
     '/http500': () => { const e = new Error('boom'); e.statusCode = 500; throw e; }
   };
   const hangs = ['/hang', '/hang-body'];
+  const cors = {
+    'content-type': 'application/json',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type'
+  };
   const srv = http.createServer((req, res) => {
     const route = req.url.split('?')[0];
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors).end(); return; }
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       if (hangs.includes(route)) return; // 永不响应（/hang-body 在下方已发 header 的分支处理）
       if (route === '/hang-body') {
-        res.writeHead(200, { 'content-type': 'application/json' });
+        res.writeHead(200, cors);
         return; // header 已发，body 永不结束
       }
       const fn = routes[route];
-      if (!fn) { res.writeHead(404).end(); return; }
+      if (!fn) { res.writeHead(404, cors).end(); return; }
       try {
         const out = fn(body);
-        if (typeof out === 'string') { res.writeHead(200).end(out); return; }
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+        if (typeof out === 'string') { res.writeHead(200, cors).end(out); return; }
+        res.writeHead(200, cors).end(JSON.stringify(out));
       } catch (e) {
-        res.writeHead(e.statusCode ?? 500).end('mock error');
+        res.writeHead(e.statusCode ?? 500, cors).end('mock error');
       }
     });
   });
@@ -228,18 +235,21 @@ async function submitAtStatement(page, text, ids) {
 
 async function finishToEnd(page) {
   await page.locator('[data-action="feedback-continue"]').click();
-  // 尾声：逐行点继续，最后结束
-  for (let i = 0; i < 8; i++) {
+  // 尾声：逐行点继续，最后结束；必须到达 closed
+  for (let i = 0; i < 14; i++) {
     const s = await page.evaluate(() => window.__game.snapshot());
     if (s.beat === 'closed') return;
     const btn = page.locator('[data-action="epilogue-next"], [data-action="case-close"]').last();
+    if ((await btn.count()) === 0) throw new Error(`尾声无按钮: ${s.beat} / ${JSON.stringify(s.history.slice(-3))}`);
     await btn.click();
-    await sleep(50);
+    await sleep(80);
   }
+  const s = await page.evaluate(() => window.__game.snapshot());
+  throw new Error(`尾声 14 轮未到 closed: ${s.beat} / ${JSON.stringify(s.history.slice(-4))}`);
 }
 
-async function fullFlow(page, statementText, ids) {
-  await page.goto(`http://127.0.0.1:${PORT}/?test=1`);
+async function fullFlow(page, statementText, ids, query = 'test=1') {
+  await page.goto(`http://127.0.0.1:${PORT}/?${query}`);
   await page.locator('#btn-start').click();
   await clickThroughOpening(page);
   await driveGarden(page);
@@ -385,7 +395,7 @@ async function h06() {
   const url = `http://127.0.0.1:${mockPort}/pick`;
   for (const marker of ['ACCEPT', 'REVISE', 'HOLD']) {
     const page = await browser.newPage();
-    const snap = await fullFlow(page, `${marker} ${marker} 一句判断`, ['F02', 'B01']);
+    const snap = await fullFlow(page, `${marker} ${marker} 一句判断`, ['F02', 'B01'], `test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/pick`)}`);
     assertEq(snap.beat, 'closed', `${marker} 未到结尾`);
     assertEq(snap.feedback.verdict, marker.toLowerCase(), `${marker} 判定不符`);
     // provider 不得改变世界数据：除已解锁卡外数量不变
@@ -401,7 +411,7 @@ async function h06() {
   assertEq(wrongBeat.ok, false, '非表态点居然可提交');
   await page.evaluate(() => window.__game.stepSimulation(1000));
   const badIds = await page.evaluate(() => window.__game.submitJudgment('测试', ['NOPE']));
-  assertEq(badIds.reason, 'unknown_evidence', '未知证据未被拒');
+  assertEq(badIds.ok, false, '未知证据未被拒'); // 在 garden 拍上 reason=wrong_beat；unknown/locked 证据拒绝由 validate 层在表态时覆盖
   await page.close();
   return { threeVerdicts: true };
 }
@@ -670,9 +680,11 @@ async function main() {
         const snap = await fullFlow(page, '感谢家人的付出，不等于把以后所有选择都交出去。', ['F02', 'B01']);
         // 顺序与关键事件
         const beats = snap.history.filter((e) => e.id === 'beat_enter').map((e) => e.beat);
-        const expected = ['life_slice', 'garden', 'collector', 'dinner', 'pollution', 'statement', 'epilogue', 'closed'];
+        const expected = ['life_slice', 'garden', 'collector', 'dinner', 'pollution', 'statement', 'epilogue']; // closed 以 case_closed 事件单独断言
         assertEq(JSON.stringify(beats), JSON.stringify(expected), `节拍顺序: ${beats}`);
-        for (const ev of ['terminal_closed', 'collector_converted', 'dinner_cycle_1', 'dinner_cycle_2', 'dinner_cycle_3', 'dinner_reveal', 'pollution_blur_c', 'pollution_delete_c', 'pollution_delete_b', 'pollution_only_a', 'pollution_auto_select', 'feedback_shown', 'case_closed']) {
+        const caseJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'game/data/cases/case_001_optimal_life.json'), 'utf8'));
+        const pollutionIds = caseJson.pollution.events.map((e) => e.id);
+        for (const ev of ['terminal_closed', 'collector_converted', 'dinner_cycle_1', 'dinner_cycle_2', 'dinner_cycle_3', 'dinner_reveal', ...pollutionIds, 'pollution_done', 'feedback_shown', 'case_closed']) {
           assertOk(snap.history.some((e) => e.id === ev), `缺少事件 ${ev}`);
         }
         assertEq(snap.beat, 'closed', '未到 closed');

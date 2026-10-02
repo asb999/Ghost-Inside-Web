@@ -14,7 +14,7 @@ export class StatementUI {
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `<div class="tag">表态点 · 一句判断</div>
-      <div class="line ghost">${this.cv.ghost_lines.statement_guide}</div>
+      <div class="line ghost">${this.cv.ghostLines.statement_guide}</div>
       <div class="line">${this.cv.statement.prompt}</div>`;
     const ta = document.createElement('textarea');
     ta.dataset.story = 'statement-input';

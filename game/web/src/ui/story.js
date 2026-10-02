@@ -176,7 +176,7 @@ export class StoryUI {
     card.innerHTML = `<div class="tag">人生路径确认</div>
       <div class="sys-toast" id="pollution-toast"></div>
       <div class="option-list" id="pollution-options"></div>
-      <div class="small">Ghost：${this.cv.ghost_lines.pollution_enter}</div>`;
+      <div class="small">Ghost：${this.cv.ghostLines.pollution_enter}</div>`;
     const list = card.querySelector('#pollution-options');
     for (const opt of this.cv.pollution.options_initial) {
       const div = document.createElement('div');
