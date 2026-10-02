@@ -156,7 +156,8 @@ async function gardenVariation(page) {
     if (s.player.z > 56) await driveTo(page, 48.2);
   }
   assertOk(waveHit && waveHit.reason === 'wave', `未吃到赞许弹幕: ${JSON.stringify(waveHit)}`);
-  assertOk(s.player.z <= 37, '弹幕命中未局部重置到检查点');
+  // 命中即回检查点：用事件自带的检查点字段断言（不依赖快照时刻的实况坐标）
+  assertOk(waveHit.z <= 37, `弹幕命中未局部重置到检查点: z=${waveHit.z}`);
 
   // 跳过余下挑战进入三阶段（组合条件），完成全程
   s = await driveTo(page, 91);
