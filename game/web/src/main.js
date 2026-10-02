@@ -1,4 +1,5 @@
 // main.js — 装配：启动页 → 状态机驱动的节拍切换 → 测试钩子（仅正式输入）
+import * as THREE from 'three';
 import rawCase from '../../data/cases/case_001_optimal_life.json';
 import { normalizeCase } from './data/normalize-case.js';
 import { Machine } from './game/machine.js';
@@ -30,6 +31,12 @@ try {
   throw e;
 }
 const scene = createScene();
+// 灯光：所有物件是 MeshLambertMaterial（受光材质），没有灯光整场景渲染为纯黑。
+// 低强度环境光 + 单方向主光，保持「过分完美的冷调花园」氛围同时保证可读。
+scene.add(new THREE.AmbientLight(0x7d8fb3, 0.65));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+keyLight.position.set(5, 12, 3);
+scene.add(keyLight);
 const camera = createCamera();
 scene.userData.camera = camera;
 
