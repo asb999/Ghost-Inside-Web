@@ -340,7 +340,8 @@ async function h02() {
   await pa.waitForTimeout(700);
   const t1 = await readTel();
   await pa.keyboard.up('ArrowRight');
-  assertOk(t1.x > 0.5, `真实右键未移动: x=${t1.x}`);
+  // 花园相机沿 +Z 前视：屏幕右 = 世界 -X（输入已按屏幕方向校正）
+  assertOk(t1.x < -0.5, `真实右键未移动: x=${t1.x}`);
   await pa.keyboard.down('Space');
   await pa.waitForTimeout(280);
   const t2 = await readTel();
