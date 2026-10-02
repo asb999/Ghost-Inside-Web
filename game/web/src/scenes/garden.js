@@ -52,6 +52,7 @@ export class GardenScene {
     this.clueObserved = false;
     this._interactDown = false;
     this._supportDown = false;
+    this._gateAnnounced = false;
     this._lastBlockedAt = -10;
 
     this._buildCourse();
@@ -118,10 +119,10 @@ export class GardenScene {
   }
 
   _buildGate() {
-    // 漂移线索：观察前一直在 x 方向往复漂移
+    // 漂移线索：观察前一直在 x 方向往复漂移（亮色+自转，保证暗场景中可见）
     this.clue = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.35),
-      new THREE.MeshBasicMaterial({ color: 0x8fe3c0, transparent: true, opacity: 0.9 })
+      new THREE.OctahedronGeometry(0.5),
+      new THREE.MeshBasicMaterial({ color: 0x9ff2e0, transparent: true, opacity: 0.95 })
     );
     this.clue.position.set(0, 1.2, CLUE_Z);
     this.group.add(this.clue);
@@ -206,9 +207,19 @@ export class GardenScene {
 
     this._updateGate(dt, p);
     this.clue.position.x = this._clueX();
+    this.clue.rotation.y += dt * 2;
   }
 
   _updateGate(dt, p) {
+    const gl = this.machine.caseView.ghostLines ?? {};
+
+    // 首次进入门区：Ghost 主动发起请求（演示编排第一步：让支援的必要性可复述）
+    if (p.z >= GATE_Z && !this._gateAnnounced) {
+      this._gateAnnounced = true;
+      this.machine.events.push('gate_announced', {});
+      this.hud?.(gl.garden_gate_drift ?? '线索在漂移——先请 Ghost 固定它（Q）。');
+    }
+
     // Ghost 保持窗口随模拟时间消耗；离开门区即解除
     if (this.pinRemaining > 0) {
       this.pinRemaining -= dt;
@@ -232,11 +243,11 @@ export class GardenScene {
         this.pinnedX = this._clueX();
         this.pinRemaining = GHOST_HOLD_S;
         this.machine.events.push('ghost_support', { hold_s: GHOST_HOLD_S });
-        this.hud?.('Ghost：抓住了。它停住了——快看（E）。');
+        this.hud?.(gl.garden_gate_pinned ?? 'Ghost：抓住了。它停住了——快看（E）。');
       } else if (this.pinRemaining > 0 && interactPressed) {
         this.clueObserved = true;
         this.machine.events.push('clue_observed', {});
-        this.hud?.('你看见了线索的内容。现在可以关掉终端（E）。');
+        this.hud?.(gl.garden_gate_observed ?? '你看见了线索的内容。现在可以关掉终端（E）。');
       }
     }
 
@@ -246,11 +257,13 @@ export class GardenScene {
         if (this.time - this._lastBlockedAt > 1) {
           this._lastBlockedAt = this.time;
           this.machine.events.push('terminal_blocked', {});
-          this.hud?.('线索仍在漂移——先请 Ghost 固定它（Q），再看（E）。');
+          this.hud?.(gl.garden_gate_blocked ?? '线索仍在漂移——先请 Ghost 固定它（Q），再看（E）。');
         }
       } else {
         this.machine.terminalClosed = true;
         this.machine.events.push('terminal_closed', {});
+        // 协作完成回电（后段语气变化的起点：仍然工具腔，但开始记录「你」）
+        this.hud?.(gl.garden_gate_callback ?? 'Ghost：同步完成。');
         // 掌声延迟 500ms 才停（恐怖来自延迟）
         this.audio?.applauseStart();
         this._timers.push(setTimeout(() => {

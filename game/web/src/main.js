@@ -129,12 +129,15 @@ function onBeatChange(m) {
     story._overlay?.remove(); story._overlay = null;
   } else if (m.beat === 'collector') {
     clearScene();
-    story.ghostHud(caseView.ghostLines.collector_enter);
+    // 协作过（clue_observed）→ Ghost 进场词切换到轻微回暖变体（工具渐暖弧线内的后段语气变化）
+    const gl = caseView.ghostLines;
     activeScene = new CollectorScene({
       scene, machine, input, audio,
       hud: { setDefense: (v) => story.ghostHud(`Ghost：目标防御值 ${v}。建议保持距离。`) }
     });
     activeScene.start();
+    // 先 start（会播防御值 HUD）再放进场词，保证协作语气变体可见
+    story.ghostHud(machine.events.has('clue_observed') && gl.collector_enter_assist ? gl.collector_enter_assist : gl.collector_enter);
   } else if (m.beat === 'dinner') {
     clearScene();
     story.ghostHud(caseView.ghostLines.dinner_enter);
@@ -191,13 +194,14 @@ function showStart() {
   card.innerHTML = `<div class="tag">GHOST INSIDE：心灵调理师</div>
     <div class="line">第一章 · 最优人生</div>
     <div class="line ghost">情绪调试系统 · 情绪调试师在线</div>
-    <div class="small">WebGL 演示 · ←→ 移动 / 空格 跳跃 / ↑↓ 前后（战斗）/ E 交互 · 建议横屏</div>`;
+    <div class="small">WebGL 演示 · ←→ 移动 / 空格 跳跃 / ↑↓ 前后（战斗）/ E 交互 / Q 请求 Ghost 支援 · 建议横屏</div>`;
   const btn = document.createElement('button');
   btn.id = 'btn-start';
   btn.textContent = '开始接入';
   btn.dataset.action = 'start';
   btn.addEventListener('click', () => {
     audio.unlock();
+    el.remove();
     machine.start();
   });
   card.appendChild(btn);

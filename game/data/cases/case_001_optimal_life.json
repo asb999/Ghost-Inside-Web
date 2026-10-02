@@ -10,160 +10,600 @@
     "core_belief": "如果我不能把家人的付出变成一个有用、成功的人生，我就不值得继续得到他们的爱。"
   },
   "agent_contract": {
-    "allowed_results": ["accept", "revise", "hold"],
+    "allowed_results": [
+      "accept",
+      "revise",
+      "hold"
+    ],
     "max_submissions": 2,
     "max_free_text_chars": 60,
-    "required_card_types": ["fact", "feeling", "boundary"],
+    "required_card_types": [
+      "fact",
+      "feeling",
+      "boundary"
+    ],
     "must_cite_unlocked_evidence": true,
-    "forbidden_actions": ["新增人物或回忆", "替林澈决定职业", "把父亲判定为纯粹反派", "把医学兴趣判定为完全虚假", "输出诊断或治疗承诺"]
+    "forbidden_actions": [
+      "新增人物或回忆",
+      "替林澈决定职业",
+      "把父亲判定为纯粹反派",
+      "把医学兴趣判定为完全虚假",
+      "输出诊断或治疗承诺"
+    ]
   },
   "cards": {
     "facts": [
-      { "id": "F01", "title": "被保留的另一种创造", "text": "林澈想创造能让孤独者感到连接的虚拟世界。", "unlock_event": "dinner_cycle_3" },
-      { "id": "F02", "title": "真实的医学兴趣", "text": "林澈认可医学帮助人的价值，也喜欢理解复杂系统。", "unlock_event": "collector_converted" },
-      { "id": "F03", "title": "父亲的恐惧", "text": "父亲把稳定当作爱与负责，并害怕孩子承担失败。", "unlock_event": "dinner_cycle_2" },
-      { "id": "R01", "title": "被涂白的修改人", "text": "47 次志愿修改全部由林澈自己的账号发起。牢笼最后一把锁是他自己上的。", "unlock_event": "dinner_reveal" }
+      {
+        "id": "F01",
+        "title": "被保留的另一种创造",
+        "text": "林澈想创造能让孤独者感到连接的虚拟世界。",
+        "unlock_event": "dinner_cycle_3"
+      },
+      {
+        "id": "F02",
+        "title": "真实的医学兴趣",
+        "text": "林澈认可医学帮助人的价值，也喜欢理解复杂系统。",
+        "unlock_event": "collector_converted"
+      },
+      {
+        "id": "F03",
+        "title": "父亲的恐惧",
+        "text": "父亲把稳定当作爱与负责，并害怕孩子承担失败。",
+        "unlock_event": "dinner_cycle_2"
+      },
+      {
+        "id": "R01",
+        "title": "被涂白的修改人",
+        "text": "47 次志愿修改全部由林澈自己的账号发起。牢笼最后一把锁是他自己上的。",
+        "unlock_event": "dinner_reveal"
+      }
     ],
     "feelings": [
-      { "id": "E01", "title": "被困住", "text": "每一次被肯定，都像把另一扇门锁上。", "unlock_event": "collector_converted" },
-      { "id": "E02", "title": "感谢与亏欠", "text": "我感谢他们，也害怕任何改变都会证明他们白白付出。", "unlock_event": "dinner_cycle_1" },
-      { "id": "E03", "title": "仍然喜欢", "text": "我不是讨厌医学，我只是害怕它吞掉我的全部身份。", "unlock_event": "pollution_done" }
+      {
+        "id": "E01",
+        "title": "被困住",
+        "text": "每一次被肯定，都像把另一扇门锁上。",
+        "unlock_event": "collector_converted"
+      },
+      {
+        "id": "E02",
+        "title": "感谢与亏欠",
+        "text": "我感谢他们，也害怕任何改变都会证明他们白白付出。",
+        "unlock_event": "dinner_cycle_1"
+      },
+      {
+        "id": "E03",
+        "title": "仍然喜欢",
+        "text": "我不是讨厌医学，我只是害怕它吞掉我的全部身份。",
+        "unlock_event": "pollution_done"
+      }
     ],
     "boundaries": [
-      { "id": "B01", "title": "感谢不等于交出决定权", "text": "承认家庭付出，同时保留改变与选择的权利。", "unlock_event": "pollution_event_only_a" },
-      { "id": "B02", "title": "职业不是全部身份", "text": "继续医学与保留创造、连接和探索可以同时存在。", "unlock_event": "none" },
-      { "id": "B03", "title": "失望不等于爱的撤回", "text": "家人的失望可能发生，但不能直接当作爱必然消失。", "unlock_event": "none" }
+      {
+        "id": "B01",
+        "title": "感谢不等于交出决定权",
+        "text": "承认家庭付出，同时保留改变与选择的权利。",
+        "unlock_event": "pollution_event_only_a"
+      },
+      {
+        "id": "B02",
+        "title": "职业不是全部身份",
+        "text": "继续医学与保留创造、连接和探索可以同时存在。",
+        "unlock_event": "none"
+      },
+      {
+        "id": "B03",
+        "title": "失望不等于爱的撤回",
+        "text": "家人的失望可能发生，但不能直接当作爱必然消失。",
+        "unlock_event": "none"
+      }
     ]
   },
   "fallbacks": {
     "accept": {
-      "evidence_ids": ["F01", "F02", "B01"],
+      "evidence_ids": [
+        "F01",
+        "F02",
+        "B01"
+      ],
       "response": "我可以感谢他们，也承认医学对我有意义。但这不等于我必须用唯一一种人生证明自己值得被爱。",
       "world_state": "dialogue_exit",
       "memory_write": "感谢不等于交出人生决定权"
     },
     "revise": {
-      "evidence_ids": ["F02", "F03", "B01"],
+      "evidence_ids": [
+        "F02",
+        "F03",
+        "B01"
+      ],
       "response": "我不想把父亲变成敌人，也不想继续让他的恐惧替我决定。我会带着感谢，重新确认这条路是不是我的选择。",
       "world_state": "conflicted_exit",
       "memory_write": "理解来源不等于取消边界"
     },
     "hold": {
-      "evidence_ids": ["F01", "F02"],
+      "evidence_ids": [
+        "F01",
+        "F02"
+      ],
       "response": "这仍然像一个替我准备好的答案。我还不能接受，但我愿意先不把矛盾删掉。",
       "world_state": "temporary_exit",
       "memory_write": "不确定也可以被保留"
     },
     "timeout": {
-      "evidence_ids": ["R01"],
+      "evidence_ids": [
+        "R01"
+      ],
       "response": "（他没有回答。但这一次，沉默没有被系统接管。）",
       "world_state": "temporary_exit",
       "memory_write": "不确定也可以被保留"
     }
   },
   "beats": [
-    { "id": "life_slice", "budget_seconds": 35, "exit_conditions": ["opening_read"] },
-    { "id": "garden", "budget_seconds": 100, "exit_conditions": ["terminal_closed"] },
-    { "id": "collector", "budget_seconds": 70, "exit_conditions": ["collector_converted"] },
-    { "id": "dinner", "budget_seconds": 65, "exit_conditions": ["dinner_reveal"] },
-    { "id": "pollution", "budget_seconds": 35, "exit_conditions": ["pollution_done"] },
-    { "id": "statement", "budget_seconds": 25, "exit_conditions": ["feedback_shown"] },
-    { "id": "epilogue", "budget_seconds": 25, "exit_conditions": ["case_closed"] }
+    {
+      "id": "life_slice",
+      "budget_seconds": 35,
+      "exit_conditions": [
+        "opening_read"
+      ]
+    },
+    {
+      "id": "garden",
+      "budget_seconds": 100,
+      "exit_conditions": [
+        "terminal_closed"
+      ]
+    },
+    {
+      "id": "collector",
+      "budget_seconds": 70,
+      "exit_conditions": [
+        "collector_converted"
+      ]
+    },
+    {
+      "id": "dinner",
+      "budget_seconds": 65,
+      "exit_conditions": [
+        "dinner_reveal"
+      ]
+    },
+    {
+      "id": "pollution",
+      "budget_seconds": 35,
+      "exit_conditions": [
+        "pollution_done"
+      ]
+    },
+    {
+      "id": "statement",
+      "budget_seconds": 25,
+      "exit_conditions": [
+        "feedback_shown"
+      ]
+    },
+    {
+      "id": "epilogue",
+      "budget_seconds": 25,
+      "exit_conditions": [
+        "case_closed"
+      ]
+    }
   ],
   "opening": {
     "steps": [
-      { "id": "msg_lin_yuan", "kind": "message", "from": "林远", "text": "哥，你什么时候回来？我以后也想成为你这样的人。", "seconds": 8 },
-      { "id": "status_record", "kind": "status", "lines": ["状态记录 · 人生稳定指数 96%", "职业匹配度 93% · 家庭满意度 97%", "异常原因：未知"], "seconds": 9 },
-      { "id": "records_preview", "kind": "records", "line": "志愿修改记录：47 次 · 修改人：████████（已涂白）", "seconds": 9 },
-      { "id": "commission", "kind": "commission", "line": "委托内容：「请帮我删掉那个总想逃走的自己。」", "seconds": 6 },
-      { "id": "enter", "kind": "enter", "line": "接入林澈的意识空间……", "seconds": 3 }
+      {
+        "id": "msg_lin_yuan",
+        "kind": "message",
+        "from": "林远",
+        "text": "哥，你什么时候回来？我以后也想成为你这样的人。",
+        "seconds": 8
+      },
+      {
+        "id": "status_record",
+        "kind": "status",
+        "lines": [
+          "状态记录 · 人生稳定指数 96%",
+          "职业匹配度 93% · 家庭满意度 97%",
+          "异常原因：未知"
+        ],
+        "seconds": 9
+      },
+      {
+        "id": "records_preview",
+        "kind": "records",
+        "line": "志愿修改记录：47 次 · 修改人：████████（已涂白）",
+        "seconds": 9
+      },
+      {
+        "id": "commission",
+        "kind": "commission",
+        "line": "委托内容：「请帮我删掉那个总想逃走的自己。」",
+        "seconds": 6
+      },
+      {
+        "id": "enter",
+        "kind": "enter",
+        "line": "接入林澈的意识空间……",
+        "seconds": 3
+      }
     ]
   },
   "garden": {
     "checkpoint_count": 2,
     "obstacle_count": 3,
     "applause_delay_ms": 500,
-    "terminal": { "id": "O03", "name": "掌声终端", "inspect_text": "关闭掌声后，第一次听见林澈的呼吸。" }
+    "terminal": {
+      "id": "O03",
+      "name": "掌声终端",
+      "inspect_text": "关闭掌声后，第一次听见林澈的呼吸。"
+    }
   },
   "collector": {
     "name": "赞许收集者",
     "rounds": 3,
     "defense_start": 100,
-    "defense_per_round": [34, 33, 33],
+    "defense_per_round": [
+      34,
+      33,
+      33
+    ],
     "convert": "找到保护意图：一次高分曾带来父亲罕见的放松。它想避免的，是失去家庭认可。"
   },
   "dinner": {
     "memory_title": "家庭饭桌",
     "cycles": [
-      { "n": 1, "line": "「这条路最稳，以后不用担心了。」", "note": "座位离桌 30 厘米", "unlock_event": "dinner_cycle_1" },
-      { "n": 2, "line": "「总算没有走弯路。」", "note": "座位离桌 60 厘米，他晚了半秒才笑", "unlock_event": "dinner_cycle_2" },
-      { "n": 3, "line": "——全桌安静。只有他说：「其实也没什么不好。」没有人接话。", "note": "座位离桌 120 厘米", "unlock_event": "dinner_cycle_3" }
+      {
+        "n": 1,
+        "line": "「这条路最稳，以后不用担心了。」",
+        "note": "座位离桌 30 厘米",
+        "unlock_event": "dinner_cycle_1"
+      },
+      {
+        "n": 2,
+        "line": "「总算没有走弯路。」",
+        "note": "座位离桌 60 厘米，他晚了半秒才笑",
+        "unlock_event": "dinner_cycle_2"
+      },
+      {
+        "n": 3,
+        "line": "——全桌安静。只有他说：「其实也没什么不好。」没有人接话。",
+        "note": "座位离桌 120 厘米",
+        "unlock_event": "dinner_cycle_3"
+      }
     ]
   },
   "reveal": {
     "title": "志愿修改记录 · 47 条",
-    "columns": ["时间", "他改掉了什么", "修改人"],
+    "columns": [
+      "时间",
+      "他改掉了什么",
+      "修改人"
+    ],
     "display_before": "████████",
     "editor_name": "林澈",
     "after_line": "Ghost：47 次修改，发起账号全部是林澈本人。系统没有动过一次手。",
     "records": [
-      { "id": "M01", "stage": "初二", "act": "想报美术社，改成奥数班", "editor_id": "lin_che" },
-      { "id": "M02", "stage": "初三", "act": "想去看画展，没跟家里提", "editor_id": "lin_che" },
-      { "id": "M03", "stage": "中考志愿", "act": "第一志愿填了更稳妥的那所高中", "editor_id": "lin_che" },
-      { "id": "M04", "stage": "高一", "act": "想学吉他，说成想买个学习机", "editor_id": "lin_che" },
-      { "id": "M05", "stage": "高一", "act": "分科想选文科，改了理科", "editor_id": "lin_che" },
-      { "id": "M06", "stage": "高二", "act": "漫画社报名表，提交前删了自己的名字", "editor_id": "lin_che" },
-      { "id": "M07", "stage": "高二", "act": "写了半本小说，锁进抽屉", "editor_id": "lin_che" },
-      { "id": "M08", "stage": "高三", "act": "搜过设计系，然后清空了搜索记录", "editor_id": "lin_che" },
-      { "id": "M09", "stage": "高三", "act": "誓师发言写好了心里话，背了标准稿", "editor_id": "lin_che" },
-      { "id": "M10", "stage": "高考志愿", "act": "第一次提交：动画专业。48 小时后本人撤回", "editor_id": "lin_che" },
-      { "id": "M11", "stage": "高考志愿", "act": "第二次提交：临床医学", "editor_id": "lin_che" },
-      { "id": "M12", "stage": "录取后", "act": "想给表哥打电话聊聊，没打", "editor_id": "lin_che" },
-      { "id": "M13", "stage": "大一", "act": "想选游戏设计课，选了学分更高的", "editor_id": "lin_che" },
-      { "id": "M14", "stage": "大一", "act": "在动漫社招新摊位前站了十分钟，走了", "editor_id": "lin_che" },
-      { "id": "M15", "stage": "大二", "act": "想休学半年，申请书写完又删掉", "editor_id": "lin_che" },
-      { "id": "M16", "stage": "大二", "act": "想去别的城市看展，谎称去游学", "editor_id": "lin_che" },
-      { "id": "M17", "stage": "大三", "act": "转专业窗口倒计时结束，没点确认", "editor_id": "lin_che" },
-      { "id": "M18", "stage": "大三", "act": "想说很累，发出去改成「还好」", "editor_id": "lin_che" },
-      { "id": "M19", "stage": "大三", "act": "想退竞赛队，被一句「都走到这了」劝回", "editor_id": "lin_che" },
-      { "id": "M20", "stage": "大四", "act": "想 gap 一年，搜了三次申请条件", "editor_id": "lin_che" },
-      { "id": "M21", "stage": "保研面试", "act": "想讲交互叙事，说了循证医学", "editor_id": "lin_che" },
-      { "id": "M22", "stage": "考研报名", "act": "想报数字媒体技术，改成临床医学", "editor_id": "lin_che" },
-      { "id": "M23", "stage": "研一", "act": "想做游戏 Mod，卸载了引擎", "editor_id": "lin_che" },
-      { "id": "M24", "stage": "研一", "act": "导师问兴趣方向，答「都行」", "editor_id": "lin_che" },
-      { "id": "M25", "stage": "研二", "act": "毕设想往严肃游戏靠，放弃", "editor_id": "lin_che" },
-      { "id": "M26", "stage": "研二", "act": "想搬出去住，算完房租没提", "editor_id": "lin_che" },
-      { "id": "M27", "stage": "研三", "act": "想不读博，和父亲通话时改了口", "editor_id": "lin_che" },
-      { "id": "M28", "stage": "规培志愿", "act": "想去精神科，改成心内科", "editor_id": "lin_che" },
-      { "id": "M29", "stage": "规培", "act": "想请假看老同学的作品展，没请", "editor_id": "lin_che" },
-      { "id": "M30", "stage": "规培", "act": "深夜在诊疗卡背面画的涂鸦，第二天扔了", "editor_id": "lin_che" },
-      { "id": "M31", "stage": "体检", "act": "想说自己心悸，勾了「无不适」", "editor_id": "lin_che" },
-      { "id": "M32", "stage": "论文", "act": "想写游戏化支持的综述，换成稳妥题目", "editor_id": "lin_che" },
-      { "id": "M33", "stage": "春节饭桌", "act": "想说「其实我想过转行」，夹了一口菜", "editor_id": "lin_che" },
-      { "id": "M34", "stage": "亲戚问规划", "act": "笑了笑，说「按部就班」", "editor_id": "lin_che" },
-      { "id": "M35", "stage": "母亲生日", "act": "想送手绘的画，买了按摩仪", "editor_id": "lin_che" },
-      { "id": "M36", "stage": "父亲节", "act": "想聊他年轻时的设计图，没开口", "editor_id": "lin_che" },
-      { "id": "M37", "stage": "上周", "act": "弟弟问「哥你喜欢什么」，答「喜欢现在的生活」", "editor_id": "lin_che" },
-      { "id": "M38", "stage": "上周", "act": "弟弟分科，建议「选理科，稳妥」", "editor_id": "lin_che" },
-      { "id": "M39", "stage": "本周", "act": "想转发独立游戏发布会，设为仅自己可见", "editor_id": "lin_che" },
-      { "id": "M40", "stage": "本周", "act": "搜「转行做游戏 多大算晚」，清空记录", "editor_id": "lin_che" },
-      { "id": "M41", "stage": "本周", "act": "情绪测评想勾「经常感到空洞」，全选了「偶尔」", "editor_id": "lin_che" },
-      { "id": "M42", "stage": "本周", "act": "想跟病人多聊五分钟，看了一眼排班表", "editor_id": "lin_che" },
-      { "id": "M43", "stage": "昨天", "act": "想删掉收藏夹「如果当初」，没删", "editor_id": "lin_che" },
-      { "id": "M44", "stage": "昨天", "act": "想退订四年的游戏杂志，保留了", "editor_id": "lin_che" },
-      { "id": "M45", "stage": "昨天", "act": "想约心灵调理，被自己标记为「没必要」", "editor_id": "lin_che" },
-      { "id": "M46", "stage": "今天", "act": "打出「我可能不喜欢医学」六个字，删了", "editor_id": "lin_che" },
-      { "id": "M47", "stage": "今天", "act": "发起本次委托：请帮我删掉那个总想逃走的自己", "editor_id": "lin_che" }
+      {
+        "id": "M01",
+        "stage": "初二",
+        "act": "想报美术社，改成奥数班",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M02",
+        "stage": "初三",
+        "act": "想去看画展，没跟家里提",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M03",
+        "stage": "中考志愿",
+        "act": "第一志愿填了更稳妥的那所高中",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M04",
+        "stage": "高一",
+        "act": "想学吉他，说成想买个学习机",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M05",
+        "stage": "高一",
+        "act": "分科想选文科，改了理科",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M06",
+        "stage": "高二",
+        "act": "漫画社报名表，提交前删了自己的名字",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M07",
+        "stage": "高二",
+        "act": "写了半本小说，锁进抽屉",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M08",
+        "stage": "高三",
+        "act": "搜过设计系，然后清空了搜索记录",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M09",
+        "stage": "高三",
+        "act": "誓师发言写好了心里话，背了标准稿",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M10",
+        "stage": "高考志愿",
+        "act": "第一次提交：动画专业。48 小时后本人撤回",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M11",
+        "stage": "高考志愿",
+        "act": "第二次提交：临床医学",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M12",
+        "stage": "录取后",
+        "act": "想给表哥打电话聊聊，没打",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M13",
+        "stage": "大一",
+        "act": "想选游戏设计课，选了学分更高的",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M14",
+        "stage": "大一",
+        "act": "在动漫社招新摊位前站了十分钟，走了",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M15",
+        "stage": "大二",
+        "act": "想休学半年，申请书写完又删掉",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M16",
+        "stage": "大二",
+        "act": "想去别的城市看展，谎称去游学",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M17",
+        "stage": "大三",
+        "act": "转专业窗口倒计时结束，没点确认",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M18",
+        "stage": "大三",
+        "act": "想说很累，发出去改成「还好」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M19",
+        "stage": "大三",
+        "act": "想退竞赛队，被一句「都走到这了」劝回",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M20",
+        "stage": "大四",
+        "act": "想 gap 一年，搜了三次申请条件",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M21",
+        "stage": "保研面试",
+        "act": "想讲交互叙事，说了循证医学",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M22",
+        "stage": "考研报名",
+        "act": "想报数字媒体技术，改成临床医学",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M23",
+        "stage": "研一",
+        "act": "想做游戏 Mod，卸载了引擎",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M24",
+        "stage": "研一",
+        "act": "导师问兴趣方向，答「都行」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M25",
+        "stage": "研二",
+        "act": "毕设想往严肃游戏靠，放弃",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M26",
+        "stage": "研二",
+        "act": "想搬出去住，算完房租没提",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M27",
+        "stage": "研三",
+        "act": "想不读博，和父亲通话时改了口",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M28",
+        "stage": "规培志愿",
+        "act": "想去精神科，改成心内科",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M29",
+        "stage": "规培",
+        "act": "想请假看老同学的作品展，没请",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M30",
+        "stage": "规培",
+        "act": "深夜在诊疗卡背面画的涂鸦，第二天扔了",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M31",
+        "stage": "体检",
+        "act": "想说自己心悸，勾了「无不适」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M32",
+        "stage": "论文",
+        "act": "想写游戏化支持的综述，换成稳妥题目",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M33",
+        "stage": "春节饭桌",
+        "act": "想说「其实我想过转行」，夹了一口菜",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M34",
+        "stage": "亲戚问规划",
+        "act": "笑了笑，说「按部就班」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M35",
+        "stage": "母亲生日",
+        "act": "想送手绘的画，买了按摩仪",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M36",
+        "stage": "父亲节",
+        "act": "想聊他年轻时的设计图，没开口",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M37",
+        "stage": "上周",
+        "act": "弟弟问「哥你喜欢什么」，答「喜欢现在的生活」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M38",
+        "stage": "上周",
+        "act": "弟弟分科，建议「选理科，稳妥」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M39",
+        "stage": "本周",
+        "act": "想转发独立游戏发布会，设为仅自己可见",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M40",
+        "stage": "本周",
+        "act": "搜「转行做游戏 多大算晚」，清空记录",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M41",
+        "stage": "本周",
+        "act": "情绪测评想勾「经常感到空洞」，全选了「偶尔」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M42",
+        "stage": "本周",
+        "act": "想跟病人多聊五分钟，看了一眼排班表",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M43",
+        "stage": "昨天",
+        "act": "想删掉收藏夹「如果当初」，没删",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M44",
+        "stage": "昨天",
+        "act": "想退订四年的游戏杂志，保留了",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M45",
+        "stage": "昨天",
+        "act": "想约心灵调理，被自己标记为「没必要」",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M46",
+        "stage": "今天",
+        "act": "打出「我可能不喜欢医学」六个字，删了",
+        "editor_id": "lin_che"
+      },
+      {
+        "id": "M47",
+        "stage": "今天",
+        "act": "发起本次委托：请帮我删掉那个总想逃走的自己",
+        "editor_id": "lin_che"
+      }
     ]
   },
   "pollution": {
-    "options_initial": ["A. 继续读博", "B. 先停下来想一想", "C. 我不知道自己想要什么"],
+    "options_initial": [
+      "A. 继续读博",
+      "B. 先停下来想一想",
+      "C. 我不知道自己想要什么"
+    ],
     "events": [
-      { "id": "PE1", "kind": "blur_c", "ui_line": "家庭期待 +12 · 社会评价 +8 · AI 推荐度 +15", "after": "C. ……" },
-      { "id": "PE2", "kind": "delete_c", "ui_line": "检测到无效答案。", "after": "" },
-      { "id": "PE3", "kind": "delete_b", "ui_line": "", "after": "" },
-      { "id": "PE4", "kind": "only_a", "ui_line": "已为您保留最优选项。", "after": "A. 继续" },
-      { "id": "PE5", "kind": "auto_select", "ui_line": "已为您选择最优人生路径：继续读博。", "after": "" }
+      {
+        "id": "PE1",
+        "kind": "blur_c",
+        "ui_line": "家庭期待 +12 · 社会评价 +8 · AI 推荐度 +15",
+        "after": "C. ……"
+      },
+      {
+        "id": "PE2",
+        "kind": "delete_c",
+        "ui_line": "检测到无效答案。",
+        "after": ""
+      },
+      {
+        "id": "PE3",
+        "kind": "delete_b",
+        "ui_line": "",
+        "after": ""
+      },
+      {
+        "id": "PE4",
+        "kind": "only_a",
+        "ui_line": "已为您保留最优选项。",
+        "after": "A. 继续"
+      },
+      {
+        "id": "PE5",
+        "kind": "auto_select",
+        "ui_line": "已为您选择最优人生路径：继续读博。",
+        "after": ""
+      }
     ]
   },
   "ghost_lines": {
@@ -175,15 +615,63 @@
     "reveal_done": "Ghost：47 次修改，发起账号全部是林澈本人。系统没有动过一次手。",
     "pollution_enter": "Ghost：检测到你的选项正在被评估。我找不到阻止它的数据依据。抱歉。",
     "statement_guide": "Ghost：你可以参考已解锁的证据，说出你自己的判断。我不会替你组织语言。",
-    "epilogue_enter": "Ghost：调理结束。还有一个问题没有问。"
+    "epilogue_enter": "Ghost：调理结束。还有一个问题没有问。",
+    "garden_gate_drift": "Ghost：检测到漂移线索。自主固定失败概率 100%。需要你授权同步。——按 Q。",
+    "garden_gate_pinned": "Ghost：已固定。保持 3 秒。看它——快。（这次不是建议。）",
+    "garden_gate_observed": "Ghost：记录完成。那是他自己藏起来的东西。现在可以关终端了。——按 E。",
+    "garden_gate_blocked": "Ghost：线索仍在漂移。先按 Q，让我抓住它。",
+    "garden_gate_callback": "Ghost：同步完成。你的请求比我的预测快 1.8 秒。已记入档案。理由：不重要。",
+    "collector_enter_assist": "Ghost：前方检测到情绪聚合体。威胁评估：中。补充：刚才那次同步，你比我果断。建议保持距离——这次听我的。"
   },
   "feedback_templates": {
-    "t_accept_thanks": { "verdict": "accept", "evidence_ids": ["F01", "F02", "B01"], "response": "我可以感谢他们，也承认医学对我有意义。但这不等于我必须用唯一一种人生证明自己值得被爱。" },
-    "t_accept_mine": { "verdict": "accept", "evidence_ids": ["R01"], "response": "这 47 次都是我自己按下的确认。你把它说出来，而不是替我删掉——这是第一次，有人看着我选。" },
-    "t_revise_not_enemy": { "verdict": "revise", "evidence_ids": ["F03", "B01"], "response": "我不想把父亲变成敌人，也不想继续让他的恐惧替我决定。我会带着感谢，重新确认这条路是不是我的选择。" },
-    "t_revise_not_hate": { "verdict": "revise", "evidence_ids": ["E03", "F02"], "response": "你说对了一半：我确实被困住了。但我不是讨厌医学——我只是害怕它吞掉我的全部身份。" },
-    "t_hold_still_costly": { "verdict": "hold", "evidence_ids": ["F01", "F02"], "response": "这仍然像一个替我准备好的答案。我还不能接受，但我愿意先不把矛盾删掉。" },
-    "t_hold_read_first": { "verdict": "hold", "evidence_ids": ["R01", "E02"], "response": "先让我把这些记录看完。不是每次沉默都需要立刻被回答。" }
+    "t_accept_thanks": {
+      "verdict": "accept",
+      "evidence_ids": [
+        "F01",
+        "F02",
+        "B01"
+      ],
+      "response": "我可以感谢他们，也承认医学对我有意义。但这不等于我必须用唯一一种人生证明自己值得被爱。"
+    },
+    "t_accept_mine": {
+      "verdict": "accept",
+      "evidence_ids": [
+        "R01"
+      ],
+      "response": "这 47 次都是我自己按下的确认。你把它说出来，而不是替我删掉——这是第一次，有人看着我选。"
+    },
+    "t_revise_not_enemy": {
+      "verdict": "revise",
+      "evidence_ids": [
+        "F03",
+        "B01"
+      ],
+      "response": "我不想把父亲变成敌人，也不想继续让他的恐惧替我决定。我会带着感谢，重新确认这条路是不是我的选择。"
+    },
+    "t_revise_not_hate": {
+      "verdict": "revise",
+      "evidence_ids": [
+        "E03",
+        "F02"
+      ],
+      "response": "你说对了一半：我确实被困住了。但我不是讨厌医学——我只是害怕它吞掉我的全部身份。"
+    },
+    "t_hold_still_costly": {
+      "verdict": "hold",
+      "evidence_ids": [
+        "F01",
+        "F02"
+      ],
+      "response": "这仍然像一个替我准备好的答案。我还不能接受，但我愿意先不把矛盾删掉。"
+    },
+    "t_hold_read_first": {
+      "verdict": "hold",
+      "evidence_ids": [
+        "R01",
+        "E02"
+      ],
+      "response": "先让我把这些记录看完。不是每次沉默都需要立刻被回答。"
+    }
   },
   "statement": {
     "prompt": "说出一句你自己的判断（他会当场检验它）：",
