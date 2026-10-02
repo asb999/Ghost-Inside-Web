@@ -4,7 +4,7 @@ import { normalizeCase } from './data/normalize-case.js';
 import { Machine } from './game/machine.js';
 import { GameClock } from './game/clock.js';
 import { Input } from './game/input.js';
-import { createRenderer, createScene, createCamera, disposeObject } from './render/renderer.js';
+import { createRenderer, createScene, createCamera, disposeObject, webglSupported } from './render/renderer.js';
 import { StoryUI } from './ui/story.js';
 import { StatementUI } from './ui/statement.js';
 import { requestFeedback } from './agent/provider.js';
@@ -191,9 +191,11 @@ function showStart() {
   el.dataset.story = 'start';
   const card = document.createElement('div');
   card.className = 'card';
+  const glWarn = webglSupported() ? '' : '<div class="line warn">当前浏览器不支持 WebGL，3D 场景将无法显示。请改用 Chrome / Edge 打开本地址。</div>';
   card.innerHTML = `<div class="tag">GHOST INSIDE：心灵调理师</div>
     <div class="line">第一章 · 最优人生</div>
     <div class="line ghost">情绪调试系统 · 情绪调试师在线</div>
+    ${glWarn}
     <div class="small">WebGL 演示 · ←→ 移动 / 空格 跳跃 / ↑↓ 前后（战斗）/ E 交互 / Q 请求 Ghost 支援 · 建议横屏</div>`;
   const btn = document.createElement('button');
   btn.id = 'btn-start';

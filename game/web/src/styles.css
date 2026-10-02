@@ -26,6 +26,7 @@ html, body { height: 100%; background: var(--ink); color: var(--text);
 .card .tag { font-size: 12px; letter-spacing: 0.2em; color: var(--cyan); margin-bottom: 12px; }
 .card .line { font-size: 18px; line-height: 1.8; margin: 10px 0; }
 .card .line.ghost { color: var(--cyan); font-size: 15px; }
+.card .line.warn { color: var(--fault, #d4484f); font-size: 14px; }
 .card .line.redacted { letter-spacing: 0.3em; color: var(--fault); }
 .card .line.amber { color: var(--amber); }
 .card .small { font-size: 13px; color: #7f92a8; margin-top: 8px; }

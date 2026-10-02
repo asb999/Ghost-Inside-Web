@@ -1,8 +1,20 @@
 // renderer.js — Three.js 渲染器；DPR 上限、真实渲染统计、资源释放
 import * as THREE from 'three';
 
+// 探测 WebGL 可用性（内嵌浏览器可能禁用硬件加速导致拿不到上下文 → 全黑）
+export function webglSupported() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch {
+    return false;
+  }
+}
+
 export function createRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+  // failIfMajorPerformanceCaveat:false —— 显式允许软件渲染回退（SwiftShader），
+  // 内嵌视图拿不到 GPU 时仍可出画面；不指定 powerPreference 以避免被绑到独显/核显某一侧
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, failIfMajorPerformanceCaveat: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.info.autoReset = false;
