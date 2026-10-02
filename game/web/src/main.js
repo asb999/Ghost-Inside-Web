@@ -4,7 +4,7 @@ import { normalizeCase } from './data/normalize-case.js';
 import { Machine } from './game/machine.js';
 import { GameClock } from './game/clock.js';
 import { Input } from './game/input.js';
-import { createRenderer, createScene, createCamera, disposeObject, webglSupported } from './render/renderer.js';
+import { createRenderer, createScene, createCamera, disposeObject, webglDiagnostics } from './render/renderer.js';
 import { StoryUI } from './ui/story.js';
 import { StatementUI } from './ui/statement.js';
 import { requestFeedback } from './agent/provider.js';
@@ -21,7 +21,14 @@ const input = new Input();
 const audio = new Audio();
 
 const canvas = document.getElementById('stage');
-const renderer = createRenderer(canvas);
+let renderer;
+try {
+  renderer = createRenderer(canvas);
+} catch (e) {
+  // 渲染器初始化失败：给出明确提示，而不是黑屏静默
+  document.getElementById('ui').innerHTML = '<div class="overlay" data-story="start"><div class="card"><div class="tag">GHOST INSIDE：心灵调理师</div><div class="line warn">3D 渲染器初始化失败：' + String(e?.message || e) + '</div><div class="line">请改用桌面版 Chrome / Edge 打开本地址。</div></div></div>';
+  throw e;
+}
 const scene = createScene();
 const camera = createCamera();
 scene.userData.camera = camera;
@@ -191,7 +198,15 @@ function showStart() {
   el.dataset.story = 'start';
   const card = document.createElement('div');
   card.className = 'card';
-  const glWarn = webglSupported() ? '' : '<div class="line warn">当前浏览器不支持 WebGL，3D 场景将无法显示。请改用 Chrome / Edge 打开本地址。</div>';
+  const gl = webglDiagnostics();
+  let glWarn = '';
+  if (!gl.webgl2) {
+    glWarn = gl.webgl1
+      ? '<div class="line warn">当前浏览器只支持 WebGL 1，但本作需要 WebGL 2（Three.js r186 起不再支持 WebGL 1）。请改用桌面版 Chrome / Edge 打开本地址。</div>'
+      : '<div class="line warn">当前浏览器不支持 WebGL，3D 场景将无法显示。请改用桌面版 Chrome / Edge 打开本地址。</div>';
+  } else if (/swiftshader|software/i.test(gl.renderer)) {
+    glWarn = `<div class="line warn">当前以软件渲染运行（${gl.renderer}），帧率可能偏低；建议用桌面版 Chrome / Edge 获得完整体验。</div>`;
+  }
   card.innerHTML = `<div class="tag">GHOST INSIDE：心灵调理师</div>
     <div class="line">第一章 · 最优人生</div>
     <div class="line ghost">情绪调试系统 · 情绪调试师在线</div>

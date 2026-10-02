@@ -11,6 +11,30 @@ export function webglSupported() {
   }
 }
 
+// 精确诊断：Three.js r186 只支持 WebGL2；内嵌视图可能只给 WebGL1
+export function webglDiagnostics() {
+  const out = { webgl2: false, webgl1: false, renderer: '' };
+  try {
+    const c = document.createElement('canvas');
+    const g2 = c.getContext('webgl2');
+    if (g2) {
+      out.webgl2 = true;
+      const dbg = g2.getExtension('WEBGL_debug_renderer_info');
+      out.renderer = dbg ? String(g2.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '(无调试信息)';
+    } else {
+      const g1 = c.getContext('webgl');
+      if (g1) {
+        out.webgl1 = true;
+        const dbg = g1.getExtension('WEBGL_debug_renderer_info');
+        out.renderer = dbg ? String(g1.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '(无调试信息)';
+      }
+    }
+  } catch {
+    out.renderer = '';
+  }
+  return out;
+}
+
 export function createRenderer(canvas) {
   // failIfMajorPerformanceCaveat:false —— 显式允许软件渲染回退（SwiftShader），
   // 内嵌视图拿不到 GPU 时仍可出画面；不指定 powerPreference 以避免被绑到独显/核显某一侧
