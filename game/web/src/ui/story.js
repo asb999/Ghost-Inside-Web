@@ -45,6 +45,19 @@ export class StoryUI {
     document.getElementById('beat-label')?.replaceChildren(document.createTextNode(text));
   }
 
+  // 顶部目标条：当前幕的任务目标（每步操作提示也会临时接管它）
+  setObjective(text) {
+    let el = document.getElementById('objective');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'objective';
+      el.className = 'objective';
+      this.root.appendChild(el);
+    }
+    el.textContent = text ?? '';
+    el.style.display = text ? '' : 'none';
+  }
+
   // ── 序 · 生活切片 ──
   showOpening() {
     const el = this._overlayEl();
@@ -268,6 +281,10 @@ export class StoryUI {
     card.innerHTML = `<div class="tag">CASE 001 · CLOSED</div>
       <div class="line">「这次，可以慢慢想。」</div>
       <div class="small">Ghost Inside：心灵调理师 · 第一章「最优人生」演示结束</div>`;
+    const btn = document.createElement('button');
+    btn.textContent = '重新开始';
+    btn.addEventListener('click', () => location.reload());
+    card.appendChild(btn);
   }
 
   destroy() {

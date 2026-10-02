@@ -158,8 +158,8 @@ async function clickThroughOpening(page) {
 }
 
 async function driveGarden(page) {
-  // 模拟时间推进 + 跳跃越过障碍与赞许弹幕；终点协作门：
-  // Q 请求 Ghost 固定线索 → E 观察 → E 关闭终端（关闭后等真实 500ms 延迟）
+  // 模拟时间推进 + 跳跃越过障碍与赞许弹幕；终点协作点：
+  // Ghost 自动固定线索 → 线索旁按 E 观察 → 终端按 E 关闭（关闭后等真实 500ms 延迟）
   for (let i = 0; i < 800; i++) {
     const s = await page.evaluate(() => {
       const g = window.__game;
@@ -180,18 +180,15 @@ async function driveGarden(page) {
     const sc = s.scene ?? {};
     if (s.z >= 91 && !s.closed) {
       if (!sc.clueObserved) {
-        if (!sc.cluePinned) {
-          await page.evaluate(() => {
-            window.__game.input('support', true);
-            window.__game.stepSimulation(100);
-            window.__game.input('support', false);
-          });
-        } else {
+        if (s.z > 91.2 && s.z <= 95.6) {
           await page.evaluate(() => {
             window.__game.input('interact', true);
-            window.__game.stepSimulation(100);
+            window.__game.stepSimulation(150);
             window.__game.input('interact', false);
+            window.__game.stepSimulation(50); // 处理松键帧，保证下次按压是边沿
           });
+        } else {
+          await page.evaluate(() => window.__game.stepSimulation(300));
         }
         continue;
       }

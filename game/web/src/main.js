@@ -1,5 +1,6 @@
 // main.js — 装配：启动页 → 状态机驱动的节拍切换 → 测试钩子（仅正式输入）
 import * as THREE from 'three';
+import './styles.css';
 import rawCase from '../../data/cases/case_001_optimal_life.json';
 import { normalizeCase } from './data/normalize-case.js';
 import { Machine } from './game/machine.js';
@@ -87,6 +88,8 @@ function clearScene() {
     activeScene = null;
   }
   scene.children.slice().forEach((c) => {
+    // 全局照明跨节拍保留；仅清理场景内容。
+    if (c.isLight) return;
     scene.remove(c);
     disposeObject(c);
   });
@@ -119,6 +122,19 @@ async function submitPipeline(res) {
   });
 }
 
+// 每幕目标（顶部目标条）：让「现在要做什么、离终点还有多远」始终可见
+const OBJECTIVES = {
+  boot: '',
+  life_slice: '目标 · 接入林澈的记忆',
+  garden: '目标 · 穿过记忆花园，关闭掌声终端',
+  collector: '目标 · 让赞许收集者放下防御（防御归零后靠近按 E）',
+  dinner: '目标 · 观察饭桌回忆，找出谁删了出口',
+  pollution: '目标 · 守住还没被吞掉的选项',
+  statement: '目标 · 用证据说出你自己的判断',
+  epilogue: '目标 · 把答案留给林澈',
+  closed: '调理结束 · 感谢试玩'
+};
+
 function onBeatChange(m) {
   story.beatLabel({
     life_slice: '序 · 生活切片',
@@ -131,6 +147,7 @@ function onBeatChange(m) {
     closed: '结案',
     boot: ''
   }[m.beat] ?? '');
+  story.setObjective(OBJECTIVES[m.beat] ?? '');
 
   if (m.beat === 'life_slice') {
     clearScene();
@@ -139,7 +156,11 @@ function onBeatChange(m) {
   } else if (m.beat === 'garden') {
     clearScene();
     story.ghostHud(caseView.ghostLines.garden_enter);
-    activeScene = new GardenScene({ scene, machine, input, audio, speedLines, hud: (t) => story.ghostHud(t) });
+    activeScene = new GardenScene({
+      scene, machine, input, audio, speedLines,
+      hud: (t) => story.ghostHud(t),
+      objective: (t) => story.setObjective(t)
+    });
     story._overlay?.remove(); story._overlay = null;
   } else if (m.beat === 'collector') {
     clearScene();
@@ -216,9 +237,10 @@ function showStart() {
   }
   card.innerHTML = `<div class="tag">GHOST INSIDE：心灵调理师</div>
     <div class="line">第一章 · 最优人生</div>
-    <div class="line ghost">情绪调试系统 · 情绪调试师在线</div>
+    <div class="line small">你是一名心灵调理师。来访者林澈，22 岁——他的记忆被「最优人生系统」修剪过 47 次。</div>
+    <div class="line ghost">任务：穿过记忆花园 → 关掉掌声终端 → 让赞许收集者放下防御 → 找出谁删了出口 → 在表态点替他说出真话。</div>
     ${glWarn}
-    <div class="small">WebGL 演示 · ←→ 移动 / 空格 跳跃 / ↑↓ 前后（战斗）/ E 交互 / Q 请求 Ghost 支援 · 建议横屏</div>`;
+    <div class="small">←→ 移动 · 空格 跳跃 · E 交互（全程只用这三个键）· 建议横屏</div>`;
   const btn = document.createElement('button');
   btn.id = 'btn-start';
   btn.textContent = '开始接入';

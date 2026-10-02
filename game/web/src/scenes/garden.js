@@ -1,6 +1,7 @@
 // garden.js — 一幕「完美花园」：三阶段机制变奏（引入→新条件→组合），
-// 终点「漂移线索」协作门（玩家请求→Ghost 固定→玩家观察→关闭终端），
-// 掌声加速区（机制即隐喻：被夸=被推着走），检查点局部重试（重试不倒退叙事状态）。
+// 终点「漂移线索」协作点（Ghost 自动固定，玩家按 E 观察→关终端），
+// 掌声加速区（机制即隐喻：被夸=被推着走），检查点局部重试。
+// 交互原则（最小 MVP）：全程只用 ←→ / 空格 / E，无额外功能键。
 import * as THREE from 'three';
 import { placeholderMesh } from '../assets/manifest.js';
 
@@ -12,7 +13,7 @@ const APPLAUSE_SPEED = 9.6;   // 掌声加速（机制即隐喻）
 const TERMINAL_Z = 96;
 
 // 三阶段变奏（P0-01）：一阶段 z<32 只引入掌声加速且无操作失败惩罚；
-// 二阶段 z<64 新增唯一条件「赞许弹幕」（间歇横扫，可跳跃或横向避让）；
+// 二阶段 z<64 新增唯一条件「赞许弹幕」（间歇弹幕墙，可跳跃或等窗口）；
 // 三阶段 z≥64 组合前两阶段条件（掌声加速区 + 赞许弹幕）。
 const STAGE1_END = 32;
 const STAGE2_END = 64;
@@ -28,31 +29,32 @@ const WAVES = [
   { z: 84, period: 3.2, duty: 0.5, phase: 1.6 }
 ];
 
-// 协作门（P0-02）：线索持续漂移、无法观察；玩家按 Q 请求支援 → Ghost 将其
-// 固定一段窗口 → 玩家在窗口内按 E 观察后才可关闭终端。缺任一侧都无法完成。
+// 协作点（P0-02，极简版）：线索持续漂移；进入门区后 Ghost 自动固定，
+// 玩家在线索旁按 E 观察后才可关闭终端——「伙伴出力 + 玩家确认」缺一不可。
 const GATE_Z = 91;
 const CLUE_Z = 93;
-const GHOST_HOLD_S = 3;
+const GHOST_PIN_DELAY_S = 0.15; // 进入门区后固定前的演出延迟（玩家在移动，延迟必须短于观察窗口）
 
 export class GardenScene {
-  constructor({ scene, machine, input, audio, speedLines, hud }) {
+  constructor({ scene, machine, input, audio, speedLines, hud, objective }) {
     this.scene = scene;
     this.machine = machine;
     this.input = input;
     this.audio = audio;
     this.speedLines = speedLines;
     this.hud = hud;
+    this.objective = objective;
     this.group = new THREE.Group();
     this.done = false;
     this._timers = [];
     this.time = 0;
     this.stage = 0;
-    this.pinRemaining = 0;
-    this.pinnedX = 0;
+    this.pinned = false;
+    this.pinnedX = undefined;
     this.clueObserved = false;
-    this._interactDown = false;
-    this._supportDown = false;
     this._gateAnnounced = false;
+    this._pinDelay = undefined;
+    this._interactDown = false;
     this._lastBlockedAt = -10;
 
     this._buildCourse();
@@ -146,7 +148,7 @@ export class GardenScene {
   }
 
   _clueX() {
-    return this.pinRemaining > 0 ? this.pinnedX : Math.sin(this.time * 1.5) * 3;
+    return this.pinned ? this.pinnedX : Math.sin(this.time * 1.5) * 3;
   }
 
   update(dt) {
@@ -168,9 +170,9 @@ export class GardenScene {
     this.speedLines?.toggle(inApplause);
     p.z += speed * dt;
 
-    // 左右
-    if (this.input.isDown('left')) p.x = Math.max(-LANE, p.x - 7 * dt);
-    if (this.input.isDown('right')) p.x = Math.min(LANE, p.x + 7 * dt);
+    // 左右：相机沿 +Z 前视，世界 +X 显示在屏幕左侧——输入按屏幕方向取反
+    if (this.input.isDown('left')) p.x = Math.min(LANE, p.x + 7 * dt);
+    if (this.input.isDown('right')) p.x = Math.max(-LANE, p.x - 7 * dt);
 
     // 跳跃
     if (this.input.isDown('jump') && this.onGround) {
@@ -201,9 +203,12 @@ export class GardenScene {
       wm.mesh.material.opacity = this._waveActive(wm.cfg) ? 0.35 : 0.06;
     }
 
-    // 相机跟随
+    // 相机跟随（看向前方玩家）
     const cam = this.scene.userData.camera;
-    if (cam) cam.position.set(p.x * 0.4, 3.6, p.z - 8.5);
+    if (cam) {
+      cam.position.set(p.x * 0.4, 3.6, p.z - 8.5);
+      cam.lookAt(p.x * 0.4, 1.4, p.z + 4);
+    }
 
     this._updateGate(dt, p);
     this.clue.position.x = this._clueX();
@@ -212,58 +217,63 @@ export class GardenScene {
 
   _updateGate(dt, p) {
     const gl = this.machine.caseView.ghostLines ?? {};
+    const inZone = p.z >= GATE_Z && p.z < TERMINAL_Z;
 
-    // 首次进入门区：Ghost 主动发起请求（演示编排第一步：让支援的必要性可复述）
-    if (p.z >= GATE_Z && !this._gateAnnounced) {
+    if (inZone && !this._gateAnnounced) {
       this._gateAnnounced = true;
       this.machine.events.push('gate_announced', {});
-      this.hud?.(gl.garden_gate_drift ?? '线索在漂移——先请 Ghost 固定它（Q）。');
+      this.hud?.(gl.garden_gate_drift);
+      this.objective?.('靠近漂移的线索，按 E 观察');
+      this._pinDelay = GHOST_PIN_DELAY_S;
     }
 
-    // Ghost 保持窗口随模拟时间消耗；离开门区即解除
-    if (this.pinRemaining > 0) {
-      this.pinRemaining -= dt;
-      if (this.pinRemaining <= 0) {
-        this.pinRemaining = 0;
-        this.machine.events.push('ghost_pin_expired', {});
+    // Ghost 自动保持：进入门区稍候即固定，未观察前一直保持（离开门区解除）
+    if (this._pinDelay !== undefined) {
+      this._pinDelay -= dt;
+      if (this._pinDelay <= 0) {
+        this._pinDelay = undefined;
+        this.machine.events.push('ghost_support', {});
+        this.hud?.(gl.garden_gate_pinned);
       }
     }
-    if (p.z < GATE_Z - 1 && this.pinRemaining > 0) this.pinRemaining = 0;
+    this.pinned = inZone && !this.clueObserved && this._pinDelay === undefined;
+    if (this.pinned && this.pinnedX === undefined) this.pinnedX = Math.sin(this.time * 1.5) * 3;
+    if (!inZone && !this.clueObserved) this.pinnedX = undefined;
 
     // 边沿触发：一次按压只产生一次动作
-    const supportNow = this.input.isDown('support');
-    const supportPressed = supportNow && !this._supportDown;
-    this._supportDown = supportNow;
     const interactNow = this.input.isDown('interact');
     const interactPressed = interactNow && !this._interactDown;
     this._interactDown = interactNow;
 
-    if (p.z >= GATE_Z && !this.clueObserved) {
-      if (supportPressed && this.pinRemaining <= 0) {
-        this.pinnedX = this._clueX();
-        this.pinRemaining = GHOST_HOLD_S;
-        this.machine.events.push('ghost_support', { hold_s: GHOST_HOLD_S });
-        this.hud?.(gl.garden_gate_pinned ?? 'Ghost：抓住了。它停住了——快看（E）。');
-      } else if (this.pinRemaining > 0 && interactPressed) {
-        this.clueObserved = true;
-        this.machine.events.push('clue_observed', {});
-        this.hud?.(gl.garden_gate_observed ?? '你看见了线索的内容。现在可以关掉终端（E）。');
-      }
+    // 观察：固定期间在线索旁按 E
+    if (this.pinned && !this.clueObserved && interactPressed && Math.abs(p.z - CLUE_Z) < 2.5) {
+      this.clueObserved = true;
+      this.machine.events.push('clue_observed', {});
+      this.hud?.(gl.garden_gate_observed);
+      this.objective?.('走向掌声终端，按 E 关闭');
     }
 
-    // 终点终端：必须先完成协作观察；未观察时按 E 只得到提示（不惩罚）
+    // 终点终端：必须先完成观察；未观察时按 E 只得到提示（不惩罚）
     if (p.z >= TERMINAL_Z - 2 && !this.machine.terminalClosed && interactPressed) {
       if (!this.clueObserved) {
         if (this.time - this._lastBlockedAt > 1) {
           this._lastBlockedAt = this.time;
-          this.machine.events.push('terminal_blocked', {});
-          this.hud?.(gl.garden_gate_blocked ?? '线索仍在漂移——先请 Ghost 固定它（Q），再看（E）。');
+          this.machine.events.push('terminal_blocked', { rewind_to: 88.5 });
+          this.hud?.(gl.garden_gate_blocked);
+          this.objective?.('先按提示观察线索，再回来关终端');
+          // 不能倒走：把玩家送回门区前，带着提示重跑这段（Ghost 保持状态一并重置）
+          p.z = 88.5;
+          p.x = 0;
+          this.pinned = false;
+          this.pinnedX = undefined;
+          this._pinDelay = GHOST_PIN_DELAY_S;
         }
       } else {
         this.machine.terminalClosed = true;
         this.machine.events.push('terminal_closed', {});
         // 协作完成回电（后段语气变化的起点：仍然工具腔，但开始记录「你」）
-        this.hud?.(gl.garden_gate_callback ?? 'Ghost：同步完成。');
+        this.hud?.(gl.garden_gate_callback);
+        this.objective?.('赞许收集者出现——保持距离，防御归零后靠近按 E');
         // 掌声延迟 500ms 才停（恐怖来自延迟）
         this.audio?.applauseStart();
         this._timers.push(setTimeout(() => {
@@ -283,7 +293,9 @@ export class GardenScene {
     let best = this.checkpoints[0];
     for (const c of this.checkpoints) if (c <= p.z + 0.5) best = c;
     this.checkpointZ = best;
-    this.pinRemaining = 0;
+    this.pinned = false;
+    this.pinnedX = undefined;
+    if (this._gateAnnounced && !this.clueObserved) this._pinDelay = GHOST_PIN_DELAY_S;
     this.machine.events.push('garden_respawn', { reason, z: this.checkpointZ, hitZ: +p.z.toFixed(2), hitY: +p.y.toFixed(2), jumpDown: this.input.isDown('jump') });
     p.set(0, 1, this.checkpointZ);
     this.vy = 0;
@@ -293,7 +305,7 @@ export class GardenScene {
   testState() {
     return {
       stage: this.stage,
-      cluePinned: this.pinRemaining > 0,
+      cluePinned: this.pinned,
       clueObserved: this.clueObserved,
       waveActive: this._waveActive(WAVES[0])
     };

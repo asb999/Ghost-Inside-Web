@@ -10,8 +10,7 @@ const KEYMAP = {
   KeyW: 'forward',
   KeyS: 'back',
   Enter: 'interact',
-  KeyE: 'interact',
-  KeyQ: 'support'
+  KeyE: 'interact'
 };
 
 export class Input {

@@ -63,10 +63,12 @@ async function step(page, ms) {
   await page.evaluate((m) => window.__game.stepSimulation(m), ms);
 }
 async function tap(page, action, simMs = 100) {
+  // 松键后补一步模拟：测试模式无 rAF，释放必须由一帧 update 处理，否则下次按压不再是边沿
   await page.evaluate(([a, m]) => {
     window.__game.input(a, true);
     window.__game.stepSimulation(m);
     window.__game.input(a, false);
+    window.__game.stepSimulation(50);
   }, [action, simMs]);
 }
 
@@ -101,16 +103,16 @@ async function driveTo(page, targetZ) {
   throw new Error(`400 轮未到 z=${targetZ}`);
 }
 
-// 完成协作门并进入收集者
+// 完成协作点并进入收集者（新流：Ghost 自动固定，玩家只按 E）
 async function completeGate(page) {
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 80; i++) {
     const s = await snap(page);
     if (s.beat === 'collector') return;
     assertOk(s.beat === 'garden', `协作门阶段节拍变为 ${s.beat}`);
     const sc = s.scene;
     if (!sc.clueObserved) {
-      if (!sc.cluePinned) await tap(page, 'support');
-      else await tap(page, 'interact');
+      if (s.player.z > 91.2 && s.player.z <= 95.6) await tap(page, 'interact');
+      else await step(page, 250); // 过冲时终端会阻断并送回 88.5，自然重跑
       continue;
     }
     await page.evaluate(() => {
@@ -142,10 +144,12 @@ async function gardenVariation(page) {
   const respawnBefore = s.history.filter((e) => e.id === 'garden_respawn').length;
   let waveHit = null;
   for (let i = 0; i < 300 && !waveHit; i++) {
-    await step(page, 150 + (i % 7) * 25);
+    await step(page, 50 + (i % 7) * 5);
     s = await snap(page);
     const rs = s.history.filter((e) => e.id === 'garden_respawn');
-    if (rs.length > respawnBefore) { waveHit = rs.pop(); break; }
+    waveHit = rs.slice(respawnBefore).find((e) => e.reason === 'wave') ?? null;
+    if (waveHit) break;
+    if (s.player.z < 48.2) await driveTo(page, 48.2);
     if (s.player.z > 56) await driveTo(page, 48.2);
   }
   assertOk(waveHit && waveHit.reason === 'wave', `未吃到赞许弹幕: ${JSON.stringify(waveHit)}`);
@@ -162,42 +166,52 @@ async function gardenVariation(page) {
 }
 
 async function ghostAndGate(page) {
+  // 新协作流（极简版）：Ghost 在门区自动固定；玩家在线索旁按 E 观察；未观察关不掉终端
   await startCase(page);
   await driveTo(page, 91);
 
-  // (a) 仅玩家：无 Ghost 固定 → 观察不成立，终端只给提示不关闭
-  await tap(page, 'interact');
-  await driveTo(page, 94.5);
+  // (a) 自动支援生效：进入门区后 ghost_support 自动触发且线索保持
+  let pinned = false;
+  for (let i = 0; i < 12; i++) {
+    await step(page, 250);
+    const s = await snap(page);
+    if (s.history.some((e) => e.id === 'ghost_support') && s.scene.cluePinned) { pinned = true; break; }
+  }
+  assertOk(pinned, '进入门区后 Ghost 未自动固定线索');
+
+  // (b) 缺玩家动作：不观察冲过观察窗口（z≥95.6）后按 E → 阻断提示 + 送回重跑
+  await driveTo(page, 95.8);
   await tap(page, 'interact');
   let s = await snap(page);
-  assertOk(!s.history.some((e) => e.id === 'clue_observed'), '无 Ghost 支援竟然完成观察');
+  assertOk(!s.history.some((e) => e.id === 'clue_observed'), '未观察竟能完成观察');
   assertOk(s.history.some((e) => e.id === 'terminal_blocked'), '未观察时终端未给出阻断提示');
-  assertOk(!s.history.some((e) => e.id === 'terminal_closed'), '缺 Ghost 支援竟能关闭终端');
+  assertOk(!s.history.some((e) => e.id === 'terminal_closed'), '缺观察动作竟能关闭终端');
+  assertOk(s.player.z < 90, '阻断后未把玩家送回重跑（会永久卡死）');
 
-  // (b) 仅 Ghost：固定后玩家不动作 → 窗口耗尽解除（取消路径），仍不可完成
-  // （advanceTestClock 单次调用上限 1000ms，需分块推进）
-  await tap(page, 'support');
+  // (c) 双方配合：重开一局，在线索旁按 E 观察 → 终端关闭恰好一次
+  await startCase(page);
+  await driveTo(page, 92.2);
+  let observed = false;
+  for (let i = 0; i < 8 && !observed; i++) {
+    await step(page, 250);
+    await tap(page, 'interact');
+    observed = (await snap(page)).history.some((e) => e.id === 'clue_observed');
+  }
   s = await snap(page);
-  assertOk(s.scene.cluePinned, 'Ghost 固定未生效');
-  for (let i = 0; i < 4; i++) await step(page, 1000);
-  s = await snap(page);
-  assertOk(!s.scene.cluePinned, '窗口耗尽后保持未解除');
-  assertOk(s.history.some((e) => e.id === 'ghost_pin_expired'), '缺 ghost_pin_expired 事件');
-  assertOk(!s.history.some((e) => e.id === 'clue_observed'), '窗口外竟能观察');
-
-  // (c) 双方配合：固定 → 观察 → 关闭，恰好一次
-  await tap(page, 'support');
-  await tap(page, 'interact');
-  s = await snap(page);
-  assertOk(s.scene.clueObserved, '双方配合未完成观察');
-  await tap(page, 'interact', 200);
-  await page.waitForTimeout(700);
+  assertOk(observed, '双方配合未完成观察');
+  // 观察后关闭：z≥94 时同一次按压可合法地观察+关闭；确保恰好一次且到 collector
+  for (let i = 0; i < 10; i++) {
+    s = await snap(page);
+    if (s.beat === 'collector') break;
+    await tap(page, 'interact', 200);
+    await page.waitForTimeout(700);
+  }
   s = await snap(page);
   assertOk(s.history.filter((e) => e.id === 'terminal_closed').length === 1, 'terminal_closed 不是恰好一次');
   assertOk(s.beat === 'collector', '协作完成后未进入 collector');
   // 表态状态不被代写：全程无表态提交
   assertOk(!s.history.some((e) => e.id.startsWith('statement')), '协作门不得写入表态状态');
-  return { onlyPlayerBlocked: true, pinExpiry: true, completedOnce: true };
+  return { autoSupport: true, unobservedBlocked: true, completedOnce: true };
 }
 
 async function localRetry(page) {
