@@ -183,6 +183,7 @@ export class GardenScene {
     if (this.input.isDown('jump') && this.onGround) {
       this.vy = JUMP_V;
       this.onGround = false;
+      this.audio?.jump();
     }
     this.vy -= GRAVITY * dt;
     p.y += this.vy * dt;
@@ -191,6 +192,7 @@ export class GardenScene {
     // 障碍碰撞（教学期间无危险）：一阶段无操作失败惩罚（P0-01）；二/三阶段回检查点（P0-03 局部重试）
     for (const o of this.tutorial.active ? [] : this.obstacles) {
       if (o.z >= STAGE1_END && Math.abs(p.z - o.z) < 0.6 && p.y < 1.5) {
+        this.audio?.hit();
         this._respawn('obstacle');
         break;
       }
@@ -200,6 +202,7 @@ export class GardenScene {
     // 跳过或等窗口期通过均可（开启期弹幕墙可见=预告）
     for (const w of this.tutorial.active ? [] : WAVES) {
       if (Math.abs(p.z - w.z) < 1.0 && p.y < 1.5 && this._waveActive(w)) {
+        this.audio?.hit();
         this._respawn('wave');
         break;
       }
@@ -313,6 +316,7 @@ export class GardenScene {
     if (this.pinned && !this.clueObserved && interactPressed && Math.abs(p.z - CLUE_Z) < 2.5) {
       this.clueObserved = true;
       this.machine.events.push('clue_observed', {});
+      this.audio?.success();
       this.hud?.(gl.garden_gate_observed);
       this.objective?.('走向掌声终端，按 E 关闭');
     }

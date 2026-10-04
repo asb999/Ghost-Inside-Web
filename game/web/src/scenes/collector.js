@@ -124,6 +124,7 @@ export class CollectorScene {
         pr.mesh.geometry.dispose(); pr.mesh.material.dispose();
         this.projectiles.splice(i, 1);
         this.hitFlash = 0.35; // 受击只影响短暂移动与视觉，不封锁故事
+        this.audio?.hit();
         this.machine.events.push('collector_hit', {});
         continue;
       }
@@ -141,7 +142,7 @@ export class CollectorScene {
       for (const s of this._spawnPlan) {
         if (!s.fired && this.roundTimer >= s.at) {
           s.fired = true;
-          if (!s.safe) { this._telegraph(s.angle); this._fire(s.angle); }
+          if (!s.safe) { this._telegraph(s.angle); this._fire(s.angle); this.audio?.whoosh(); }
         }
       }
       if (this.roundTimer > 6 + this.round) {
@@ -168,6 +169,7 @@ export class CollectorScene {
         this.converted = true;
         this.done = true;
         this.machine.conversionDone = true;
+        this.audio?.success();
         this.machine.events.push('collector_converted', {});
         this.machine.unlock('F02');
         this.machine.unlock('E01');

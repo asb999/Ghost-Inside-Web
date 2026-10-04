@@ -7,6 +7,7 @@
 !data/
 !.astra/
 !.workbuddy/
+!Ghost Inside_2.5D_Prototype_Building/
 # 大文件与产物
 Godot_Project.zip
 *.zip
@@ -14,3 +15,4 @@ game/web/node_modules/
 game/web/dist/
 .astra/reports/
 .astra/harness/fixtures/tmp/
+Ghost Inside_2.5D_Prototype_Building/node_modules/

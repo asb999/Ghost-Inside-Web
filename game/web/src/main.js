@@ -196,9 +196,11 @@ function onBeatChange(m) {
   } else if (m.beat === 'pollution') {
     clearScene();
     story.ghostHud(caseView.ghostLines.pollution_enter);
+    audio.heartbeatStart();
     story.showPollution();
   } else if (m.beat === 'statement') {
     clearScene();
+    audio.heartbeatStop();
     story.ghostHud(caseView.ghostLines.statement_guide);
     statementUI.show({ onSubmit: (res) => submitPipeline(res) });
   } else if (m.beat === 'epilogue') {
@@ -207,10 +209,14 @@ function onBeatChange(m) {
     story.showEpilogue();
   } else if (m.beat === 'closed') {
     clearScene();
+    audio.heartbeatStop();
     story.ghostHud('');
     story.showEnd();
   }
 }
+
+// 全部 UI 按钮统一带点击声（事件委托，一处接线）
+uiRoot.addEventListener('click', () => audio.click());
 
 let lastBeat = 'boot';
 machine.onChange((m) => {
@@ -271,6 +277,16 @@ function showStart() {
   uiRoot.appendChild(el);
 }
 showStart();
+
+// 静音开关（右下角常驻）
+const muteBtn = document.createElement('button');
+muteBtn.id = 'audio-mute';
+muteBtn.textContent = '🔊 声音开';
+muteBtn.addEventListener('click', () => {
+  audio.unlock();
+  muteBtn.textContent = audio.toggleMute() ? '🔇 声音关' : '🔊 声音开';
+});
+document.body.appendChild(muteBtn);
 
 // 测试钩子：只提供正式输入通道，不提供任何状态直写
 const params = new URLSearchParams(location.search);
