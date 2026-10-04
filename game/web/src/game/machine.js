@@ -18,6 +18,9 @@ export class Machine {
     this.dinnerCycle = 0;
     this.revealDone = false;
     this.pollutionStep = 0;      // 0..5
+    this.pollutionResists = new Set();
+    this.pollutionWindow = null; // {step, mode, open, resisted}
+    this.pollutionReadyToExit = false;
     this.feedback = null;        // {source, verdict, response, evidence_ids}
     this.submissions = 0;
     this.captured = false;       // 迟到响应/重复提交防护
@@ -44,7 +47,11 @@ export class Machine {
     if (to === 'collector' && !this.terminalClosed) return false;
     if (to === 'dinner' && !this.conversionDone) return false;
     if (to === 'pollution' && this.dinnerCycle < 3) return false;
-    if (to === 'statement' && this.pollutionStep < 5) return false;
+    if (to === 'statement' && (
+      this.pollutionStep < 5
+      || !this.pollutionReadyToExit
+      || !this.events.has('pollution_exit_opened')
+    )) return false;
     if (to === 'epilogue' && !this.feedback) return false;
     if (to === 'closed' && this.beat !== 'epilogue') return false;
     if (!this.canAdvance(to)) return false;
@@ -79,6 +86,8 @@ export class Machine {
   recordPollutionEvent() {
     if (this.beat !== 'pollution') return false;
     if (this.pollutionStep >= 5) return false;
+    const expectedStep = this.pollutionStep + 1;
+    if (this.pollutionWindow?.step === expectedStep) this.pollutionWindow = null;
     this.pollutionStep += 1;
     const ev = this.caseView.pollution.events[this.pollutionStep - 1];
     this.events.push(`pollution_${ev.kind}`, { id: ev.id });
@@ -86,9 +95,59 @@ export class Machine {
     if (this.pollutionStep === 5) {
       this.events.push('pollution_done', {});
       this.unlock('E03');
+      this.pollutionReadyToExit = this.pollutionResists.size > 0;
     }
     this._emit();
     return true;
+  }
+
+  openPollutionWindow(step, mode = 'event') {
+    if (this.beat !== 'pollution') return false;
+    if (!Number.isInteger(step) || step < 1 || step > 5) return false;
+    const isEventWindow = mode === 'event' && step === this.pollutionStep + 1;
+    const isRecoveryWindow = mode === 'recovery'
+      && this.pollutionStep === 5
+      && this.pollutionResists.size === 0
+      && step === 5;
+    if (!isEventWindow && !isRecoveryWindow) return false;
+    this.pollutionWindow = {
+      step,
+      mode,
+      open: true,
+      resisted: this.pollutionResists.has(step)
+    };
+    this._emit();
+    return true;
+  }
+
+  closePollutionWindow(step) {
+    if (!this.pollutionWindow?.open || this.pollutionWindow.step !== step) return false;
+    this.pollutionWindow = null;
+    this._emit();
+    return true;
+  }
+
+  recordPollutionResist(step) {
+    if (this.beat !== 'pollution') return false;
+    if (!this.pollutionWindow?.open || this.pollutionWindow.step !== step) return false;
+    if (this.pollutionResists.has(step)) return false;
+    this.pollutionResists.add(step);
+    this.pollutionWindow = { ...this.pollutionWindow, resisted: true };
+    this.events.push('pollution_resist', { step });
+    if (this.pollutionStep >= 5) this.pollutionReadyToExit = true;
+    this._emit();
+    return true;
+  }
+
+  openPollutionExit() {
+    if (this.beat !== 'pollution') return false;
+    if (this.pollutionStep < 5 || this.pollutionResists.size < 1) return false;
+    this.pollutionReadyToExit = true;
+    this.pollutionWindow = null;
+    this.events.push('pollution_exit_opened', {
+      resists: this.pollutionResists.size
+    });
+    return this.advance('statement');
   }
 
   recordDinnerCycle(n) {
@@ -163,6 +222,9 @@ export class Machine {
       dinnerCycle: this.dinnerCycle,
       revealDone: this.revealDone,
       pollutionStep: this.pollutionStep,
+      pollutionResists: [...this.pollutionResists].sort((a, b) => a - b),
+      pollutionWindow: this.pollutionWindow ? { ...this.pollutionWindow } : null,
+      pollutionReadyToExit: this.pollutionReadyToExit,
       feedback: this.feedback ? { ...this.feedback } : null,
       submissions: this.submissions,
       history: this.events.history()

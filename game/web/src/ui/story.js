@@ -1,11 +1,18 @@
 // story.js — DOM 演出：开场 / HUD / 饭桌三循环 / 47 条揭示 / 污染 / 尾声 / 结案
 export class StoryUI {
-  constructor(root, machine, caseView) {
+  constructor(root, machine, caseView, input = null) {
     this.root = root;
     this.machine = machine;
     this.cv = caseView;
+    this.input = input;
     this._timers = [];
     this.pollutionClock = 0;
+    this._pollutionPhase = 'idle';
+    this._pollutionStep = 0;
+    this._pollutionRemaining = 0;
+    this._pollutionFeedback = '';
+    this._pollutionFeedbackRemaining = 0;
+    this._interactLatch = false;
     this._overlay = null;
   }
 
@@ -200,33 +207,108 @@ export class StoryUI {
     }
     this.pollutionClock = 0;
     this._pollEl = card;
+    this._pollutionPhase = 'window';
+    this._pollutionStep = 1;
+    this._pollutionRemaining = 2800;
+    this._pollutionFeedback = '';
+    this._pollutionFeedbackRemaining = 0;
+    this._interactLatch = false;
+    this.machine.openPollutionWindow(1);
+    this._renderPollutionPrompt();
   }
 
   // 主循环每帧调用（dt 为模拟毫秒）
   tickPollution(dt) {
-    if (!this._pollEl || this.machine.pollutionStep >= 5) return;
-    this.pollutionClock += dt;
-    const interval = 6000; // 每 6 秒模拟时间一次事件
-    if (this.pollutionClock >= interval * (this.machine.pollutionStep + 1)) {
-      const ev = this.cv.pollution.events[this.machine.pollutionStep];
-      this.machine.recordPollutionEvent();
-      const toast = this._pollEl.querySelector('#pollution-toast');
-      if (toast) toast.textContent = ev.ui_line ?? '';
-      const c = this._pollEl.querySelector('[data-option="C"]');
-      const b = this._pollEl.querySelector('[data-option="B"]');
-      const a = this._pollEl.querySelector('[data-option="A"]');
-      if (ev.kind === 'blur_c' && c) { c.textContent = ev.after; c.classList.add('blurred'); }
-      if (ev.kind === 'delete_c' && c) { c.classList.add('deleted'); }
-      if (ev.kind === 'delete_b' && b) { b.classList.add('deleted'); }
-      if (ev.kind === 'only_a' && b) {
-        b.remove();
-        if (a) a.textContent = ev.after;
+    if (!this._pollEl || this.machine.beat !== 'pollution') return;
+    const safeDt = Math.max(0, Number(dt) || 0);
+    this.pollutionClock += safeDt;
+    const interactDown = this.input?.isDown?.('interact') ?? false;
+    const interactPressed = interactDown && !this._interactLatch;
+    this._interactLatch = interactDown;
+
+    if (this._pollutionPhase === 'window') {
+      if (interactPressed && this.machine.recordPollutionResist(this._pollutionStep)) {
+        // 每一步只能成功一次；多出来的 450ms 是短暂守住，不会取消污染事件。
+        this._pollutionRemaining += 450;
+        this._pollutionFeedback = '抵抗成功：选项暂时稳住，但系统仍在推进。';
+        this._pollutionFeedbackRemaining = 700;
       }
-      if (ev.kind === 'auto_select') {
-        if (toast) toast.textContent = ev.ui_line;
-        if (a) a.classList.add('selected');
-        this.machine.advance('statement');
+      this._pollutionRemaining -= safeDt;
+      this._pollutionFeedbackRemaining = Math.max(0, this._pollutionFeedbackRemaining - safeDt);
+      if (this._pollutionRemaining <= 0) this._applyPollutionEvent();
+      else this._renderPollutionPrompt();
+      return;
+    }
+
+    if (this._pollutionPhase === 'recovery') {
+      if (interactPressed && this.machine.recordPollutionResist(5)) {
+        this.machine.closePollutionWindow(5);
+        this._pollutionPhase = 'exit';
+        this._renderPollutionPrompt('你守住了一瞬。再按 E，撕开通往表态点的出口。');
       }
+      return;
+    }
+
+    if (this._pollutionPhase === 'exit' && interactPressed) {
+      this.machine.openPollutionExit();
+    }
+  }
+
+  _renderPollutionPrompt(feedback = '') {
+    const toast = this._pollEl?.querySelector('#pollution-toast');
+    if (!toast) return;
+    if (feedback || this._pollutionFeedbackRemaining > 0) {
+      toast.textContent = feedback || this._pollutionFeedback;
+      return;
+    }
+    if (this._pollutionPhase === 'window') {
+      const seconds = Math.max(0, this._pollutionRemaining / 1000).toFixed(1);
+      const resisted = this.machine.pollutionResists.has(this._pollutionStep);
+      toast.textContent = resisted
+        ? `第 ${this._pollutionStep}/5 次改写 · 已抵抗 · ${seconds}s 后仍会发生`
+        : `第 ${this._pollutionStep}/5 次改写 · 按 E 抵抗 · ${seconds}s`;
+    } else if (this._pollutionPhase === 'recovery') {
+      toast.textContent = '所有选项已经被改写。最后机会：按 E 抵抗一次（窗口保持开放）。';
+    } else if (this._pollutionPhase === 'exit') {
+      toast.textContent = '按 E 撕开出口，进入表态点。';
+    }
+  }
+
+  _applyPollutionEvent() {
+    const ev = this.cv.pollution.events[this._pollutionStep - 1];
+    if (!ev || !this.machine.recordPollutionEvent()) return;
+    const toast = this._pollEl.querySelector('#pollution-toast');
+    const c = this._pollEl.querySelector('[data-option="C"]');
+    const b = this._pollEl.querySelector('[data-option="B"]');
+    const a = this._pollEl.querySelector('[data-option="A"]');
+    if (toast) toast.textContent = ev.ui_line ?? '';
+    if (ev.kind === 'blur_c' && c) { c.textContent = ev.after; c.classList.add('blurred'); }
+    if (ev.kind === 'delete_c' && c) c.classList.add('deleted');
+    if (ev.kind === 'delete_b' && b) b.classList.add('deleted');
+    if (ev.kind === 'only_a' && b) {
+      b.remove();
+      if (a) a.textContent = ev.after;
+    }
+    if (ev.kind === 'auto_select' && a) a.classList.add('selected');
+
+    if (this._pollutionStep < 5) {
+      this._pollutionStep += 1;
+      this._pollutionRemaining = 2800;
+      this._pollutionFeedback = '';
+      this._pollutionFeedbackRemaining = 0;
+      this.machine.openPollutionWindow(this._pollutionStep);
+      this._renderPollutionPrompt();
+      return;
+    }
+
+    if (this.machine.pollutionResists.size > 0) {
+      this._pollutionPhase = 'exit';
+      this._renderPollutionPrompt();
+    } else {
+      // 全部错过时，污染照常完成，但给一个不会消失的补救窗口，避免永久卡关。
+      this._pollutionPhase = 'recovery';
+      this.machine.openPollutionWindow(5, 'recovery');
+      this._renderPollutionPrompt();
     }
   }
 
@@ -292,6 +374,7 @@ export class StoryUI {
     this._overlay?.remove();
     this._overlay = null;
     this._pollEl = null;
+    this._pollutionPhase = 'idle';
     document.querySelector('.hud')?.remove();
   }
 }

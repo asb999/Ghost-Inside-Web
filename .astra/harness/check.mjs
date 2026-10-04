@@ -223,22 +223,63 @@ async function driveGarden(page) {
 }
 
 async function driveCollector(page) {
-  for (let i = 0; i < 600; i++) {
-    const s = await page.evaluate(() => window.__game.snapshot());
-    if (s.beat !== 'collector') return;
-    if (s.history.some((e) => e.id === 'collector_converted')) return;
-    if (s.history.filter((e) => e.id === 'collector_defense_drop').length >= 3) {
-      // 防御归零：向前接近并交互转化
-      await page.evaluate(() => {
-        window.__game.input('forward', true);
-        window.__game.stepSimulation(900);
-      });
-      await page.evaluate(() => window.__game.input('interact', true));
-      await page.evaluate(() => window.__game.stepSimulation(400));
-      await page.evaluate(() => window.__game.input('interact', false));
-      continue;
+  // 探针式驱动：每个循环在单次 evaluate 内完成「读取 → 决策 → 按住 → 推进 → 松开 → 复读」，
+  // 避免跨 evaluate 的状态错位；移动用 120ms 短步，进入安全区后保持。
+  for (let i = 0; i < 300; i++) {
+    const r = await page.evaluate(() => {
+      const s0 = window.__game.snapshot();
+      if (s0.beat !== 'collector') return { done: true };
+      if (s0.history.some((e) => e.id === 'collector_converted')) return { done: true };
+      const sc = s0.scene ?? {};
+      if ((sc.defense ?? 1) <= 0 || s0.history.filter((e) => e.id === 'collector_defense_drop').length >= 2) {
+        window.__game.input('interact', true);
+        window.__game.stepSimulation(250);
+        window.__game.input('interact', false);
+        window.__game.stepSimulation(80);
+        return { acted: 'interact' };
+      }
+      if (sc.retryLocked) { window.__game.stepSimulation(300); return { acted: 'lockwait' }; }
+      const target = Number(sc.safeX ?? 0);
+      const x = Number(s0.player?.x ?? 0);
+      const d = target - x;
+      if (Math.abs(d) > 0.15) {
+        const a = d < 0 ? 'left' : 'right';
+        window.__game.input(a, true);
+        window.__game.stepSimulation(120);
+        window.__game.input(a, false);
+        window.__game.stepSimulation(40);
+        return { acted: 'move' };
+      }
+      window.__game.stepSimulation(250);
+      return { acted: 'hold' };
+    });
+    if (r.done) return;
+  }
+  throw new Error('collector 300 轮未完成');
+}
+
+async function probeCollectorAgency() {
+  const page = await browser.newPage();
+  try {
+    await page.goto(`http://127.0.0.1:${PORT}/?test=1`);
+    await page.locator('#btn-start').click();
+    await clickThroughOpening(page);
+    await driveGarden(page);
+    let snap = await page.evaluate(() => window.__game.snapshot());
+    assertEq(snap.beat, 'collector', '主动性探针未进入收集者');
+    const initialDefense = snap.scene?.defense;
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.__game.stepSimulation(1000));
     }
-    await page.evaluate(() => window.__game.stepSimulation(400));
+    snap = await page.evaluate(() => window.__game.snapshot());
+    assertEq(snap.scene?.defense, initialDefense, '零输入仍降低了收集者防御');
+    assertOk(!snap.history.some((e) => e.id === 'collector_defense_drop'), '零输入触发了防御下降');
+    assertOk(snap.history.some((e) => e.id === 'collector_round_failed'), '零输入没有产生可观察失败');
+    assertEq(JSON.stringify(snap.scene?.controls), JSON.stringify(['left', 'right', 'jump', 'interact']), '战斗控制承诺不一致');
+    assertEq(snap.scene?.arenaCenter?.z, 0, '竞技场中心未统一');
+    assertEq(snap.scene?.playerZ, 5, '玩家不在统一竞技场坐标内');
+  } finally {
+    await page.close();
   }
 }
 
@@ -255,7 +296,19 @@ async function drivePollution(page) {
   for (let i = 0; i < 400; i++) {
     const s = await page.evaluate(() => window.__game.snapshot());
     if (s.beat !== 'pollution') return s.beat;
-    await page.evaluate(() => window.__game.stepSimulation(500));
+    const windowOpen = s.pollutionWindow?.open;
+    const resisted = s.pollutionWindow?.resisted;
+    const exitOpened = s.history.some((e) => e.id === 'pollution_exit_opened');
+    if ((windowOpen && !resisted) || (s.pollutionStep === 5 && s.pollutionReadyToExit && !exitOpened)) {
+      await page.evaluate(() => {
+        window.__game.input('interact', true);
+        window.__game.stepSimulation(120);
+        window.__game.input('interact', false);
+        window.__game.stepSimulation(80);
+      });
+      continue;
+    }
+    await page.evaluate(() => window.__game.stepSimulation(400));
   }
   return 'timeout';
 }
@@ -621,10 +674,17 @@ async function h15() {
   const files = [
     'game/web/src/main.js', 'game/data/cases/case_001_optimal_life.json',
     'game/web/package-lock.json', 'game/web/README.md', 'DEMO_CHECKLIST.md',
-    '.astra/harness/check.mjs', '.astra/harness/check.sh', 'ask_astra.sh'
+    '.astra/harness/check.mjs', '.astra/harness/check.sh', 'ask_astra.sh',
+    'game/web/src/assets/scenes/start.png',
+    'game/web/src/assets/scenes/garden.png',
+    'game/web/src/assets/scenes/collector.png',
+    'game/web/src/assets/scenes/dinner.png',
+    'game/web/src/assets/scenes/pollution.png',
+    'game/web/src/assets/scenes/epilogue.png'
   ];
   for (const f of files) {
     assertOk(fs.existsSync(path.join(ROOT, f)), `缺少交付物 ${f}`);
+    if (f.endsWith('.png')) assertOk(fs.statSync(path.join(ROOT, f)).size > 100000, `场景图无效 ${f}`);
   }
   const readme = fs.readFileSync(path.join(ROOT, 'game/web/README.md'), 'utf8');
   for (const cmd of ['npm install', 'npm start', 'npm run build', 'bash ./ask_astra.sh check', 'VITE_GHOST_PROVIDER_URL']) {
@@ -715,6 +775,7 @@ async function main() {
       page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
       page.on('requestfailed', (r) => failedRequests.push(`${r.url()} ${r.failure()?.errorText}`));
       try {
+        if (active.includes('H03_ORDERED_FLOW')) await probeCollectorAgency();
         const snap = await fullFlow(page, '感谢家人的付出，不等于把以后所有选择都交出去。', ['F02', 'B01']);
         // 顺序与关键事件
         const beats = snap.history.filter((e) => e.id === 'beat_enter').map((e) => e.beat);
@@ -725,6 +786,9 @@ async function main() {
         for (const ev of ['terminal_closed', 'collector_converted', 'dinner_cycle_1', 'dinner_cycle_2', 'dinner_cycle_3', 'dinner_reveal', ...pollutionIds, 'pollution_done', 'feedback_shown', 'case_closed']) {
           assertOk(snap.history.some((e) => e.id === ev), `缺少事件 ${ev}`);
         }
+        assertEq(snap.history.filter((e) => e.id === 'collector_defense_drop').length, 2, '收集者应恰好两轮降防');
+        assertOk(snap.history.some((e) => e.id === 'pollution_resist'), '污染阶段缺少主动抵抗');
+        assertOk(snap.history.some((e) => e.id === 'pollution_exit_opened'), '污染阶段未主动撕开出口');
         assertEq(snap.beat, 'closed', '未到 closed');
         if (active.includes('H03_ORDERED_FLOW')) lines.push(['H03_ORDERED_FLOW', true]);
         if (active.includes('H04_CLEAN_SMOKE')) {

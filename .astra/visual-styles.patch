@@ -1,0 +1,61 @@
+diff --git a/game/web/src/styles.css b/game/web/src/styles.css
+--- a/game/web/src/styles.css
++++ b/game/web/src/styles.css
+@@ -11,8 +11,43 @@ html, body { height: 100%; background: var(--ink); color: var(--text);
+   font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; overflow: hidden; }
+-#app { position: relative; width: 100vw; height: 100vh; }
+-#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
++#app { position: relative; width: 100vw; height: 100vh; isolation: isolate; background: var(--ink); }
++#scene-backdrop {
++  --scene-image: none;
++  position: absolute; inset: 0; z-index: 0; overflow: hidden;
++  background:
++    radial-gradient(circle at 50% 42%, rgba(46, 71, 102, 0.38), transparent 58%),
++    linear-gradient(145deg, #101b29 0%, var(--ink) 58%, #080b10 100%);
++}
++#scene-backdrop::before {
++  content: ''; position: absolute; inset: -2%;
++  background-image: var(--scene-image);
++  background-size: cover; background-position: center;
++  filter: saturate(0.82) contrast(1.04) brightness(0.72);
++  transform: scale(1.04); opacity: 0.92;
++}
++#scene-backdrop::after {
++  content: ''; position: absolute; inset: 0;
++  background:
++    linear-gradient(180deg, rgba(6, 10, 16, 0.3), rgba(6, 10, 16, 0.05) 44%, rgba(6, 10, 16, 0.58)),
++    radial-gradient(ellipse at center, transparent 34%, rgba(6, 10, 16, 0.68) 100%);
++}
++#scene-backdrop.scene-backdrop-enter::before { animation: scene-backdrop-enter 0.75s ease-out both; }
++#scene-backdrop[data-beat='collector']::before,
++#scene-backdrop[data-beat='pollution']::before { filter: saturate(0.96) contrast(1.08) brightness(0.64); }
++#scene-backdrop[data-beat='epilogue']::before,
++#scene-backdrop[data-beat='closed']::before { filter: saturate(0.78) contrast(0.98) brightness(0.8); }
++@keyframes scene-backdrop-enter {
++  from { opacity: 0; transform: scale(1.075); }
++  to { opacity: 0.92; transform: scale(1.04); }
++}
++#stage { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; display: block; opacity: 0.82; }
+ #ui { position: absolute; inset: 0; pointer-events: none; }
+ #ui > * { pointer-events: auto; }
+ 
+ .overlay { position: absolute; inset: 0; display: flex; flex-direction: column;
+-  align-items: center; justify-content: center; background: var(--panel); z-index: 10; }
+-.overlay.dim { background: rgba(10, 14, 20, 0.6); }
++  align-items: center; justify-content: center; background: rgba(10, 14, 20, 0.68); z-index: 10;
++  backdrop-filter: blur(2px); }
++.overlay.dim { background: rgba(10, 14, 20, 0.48); }
+ 
+-.card { max-width: 640px; width: min(92vw, 640px); background: rgba(16, 22, 32, 0.96);
++.card { max-width: 640px; width: min(92vw, 640px); background: rgba(16, 22, 32, 0.92);
+   border: 1px solid var(--blue); border-radius: 8px; padding: 28px 32px;
+-  box-shadow: 0 0 40px rgba(53, 80, 122, 0.35); }
++  box-shadow: 0 0 40px rgba(3, 7, 12, 0.72), 0 0 28px rgba(53, 80, 122, 0.28); }
+@@ -147,3 +182,7 @@ textarea { width: 100%; min-height: 72px; background: rgba(53, 80, 122, 0.12);
+   background: rgba(10, 14, 20, 0.85); color: #9fc9d6;
+   border: 1px solid #24344d; padding: 6px 12px; font-size: 13px; cursor: pointer;
+ }
++
++@media (prefers-reduced-motion: reduce) {
++  #scene-backdrop.scene-backdrop-enter::before { animation: none; }
++}

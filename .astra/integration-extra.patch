@@ -1,0 +1,23 @@
+diff --git a/game/web/src/main.js b/game/web/src/main.js
+--- a/game/web/src/main.js
++++ b/game/web/src/main.js
+@@ -75,7 +75,7 @@ const camera = createCamera();
+ scene.userData.camera = camera;
+ 
+ const uiRoot = document.getElementById('ui');
+-const story = new StoryUI(uiRoot, machine, caseView);
++const story = new StoryUI(uiRoot, machine, caseView, input);
+ const statementUI = new StatementUI(uiRoot, machine, caseView);
+ 
+ // 速度线（掌声加速的视觉反馈，机制即隐喻：被夸=被推着走）
+diff --git a/game/web/src/render/renderer.js b/game/web/src/render/renderer.js
+--- a/game/web/src/render/renderer.js
++++ b/game/web/src/render/renderer.js
+@@ -33,7 +33,7 @@ export function createRenderer(canvas) {
+   // failIfMajorPerformanceCaveat:false —— 显式允许软件渲染回退（SwiftShader），
+   // 内嵌视图拿不到 GPU 时仍可出画面；不指定 powerPreference 以避免被绑到独显/核显某一侧
+-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, failIfMajorPerformanceCaveat: false });
++  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, failIfMajorPerformanceCaveat: false });
+   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+   renderer.setSize(window.innerWidth, window.innerHeight);
+   renderer.info.autoReset = false;

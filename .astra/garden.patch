@@ -1,0 +1,23 @@
+diff --git a/game/web/src/scenes/garden.js b/game/web/src/scenes/garden.js
+--- a/game/web/src/scenes/garden.js
++++ b/game/web/src/scenes/garden.js
+@@ -9,7 +9,7 @@ import { placeholderMesh } from '../assets/manifest.js';
+ const GRAVITY = 20;
+ const JUMP_V = 9;
+ const BASE_SPEED = 6;
+-const APPLAUSE_SPEED = 9.6;   // 掌声加速（机制即隐喻）
++const APPLAUSE_SPEED = 8.6;   // 掌声加速：保留失控感，但给低帧率环境更多修正余量
+ const TERMINAL_Z = 96;
+ 
+ // 三阶段变奏（P0-01）：一阶段 z<32 只引入掌声加速且无操作失败惩罚；
+@@ -27,8 +27,8 @@ const STAGE_HINTS = {
+ // 赞许弹幕（二/三阶段新条件）：全车道间歇弹幕墙，开启期可见（预告），
+ // 贴地穿过 → 回检查点；跳过或等窗口期通过均可
+ const WAVES = [
+-  { z: 50, period: 3.2, duty: 0.5, phase: 0 },
+-  { z: 84, period: 3.2, duty: 0.5, phase: 1.6 }
++  { z: 50, period: 3.4, duty: 0.42, phase: 0 },
++  { z: 84, period: 3.4, duty: 0.42, phase: 1.7 }
+ ];
+ 
+ // 协作点（P0-02，极简版）：线索持续漂移；进入门区后 Ghost 自动固定，

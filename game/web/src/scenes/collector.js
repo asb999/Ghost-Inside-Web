@@ -1,11 +1,24 @@
-// collector.js — 赞许收集者战斗：三轮祝福弹幕（有预告与安全区），
-// 防御值随轮次完成而下降（不按击杀），归零后接近交互 → 转化 → 记忆入口。
+// collector.js — 赞许收集者战斗：两轮安全区弹幕。
+// 玩家必须主动进入安全区并无伤完成当前轮，怪物才会放下防御；
+// 连续失败两次后扩大安全区，但不会替玩家完成操作。
 import * as THREE from 'three';
 import { placeholderMesh } from '../assets/manifest.js';
 
+const ARENA_CENTER = Object.freeze({ x: 0, z: 0 });
 const ARENA_R = 7;
+const PLAYER_Z = ARENA_CENTER.z + 5;
+const PLAYER_SPEED = 7;
 const GRAVITY = 22;
 const JUMP_V = 8;
+const ROUND_COUNT = 2;
+const ROUND_DURATION = 6.2;
+const RETRY_LOCK_SECONDS = 0.65;
+const BASE_SAFE_RADIUS = 1.35;
+const ASSIST_SAFE_RADIUS = 2.35;
+const PROJECTILE_SPEED = 9;
+const SAFE_X = [-3.4, 3.4];
+const PROJECTILE_LANES = [-6, -4, -2, 0, 2, 4, 6];
+const BURST_TIMES = [0.65, 2.05, 3.45, 4.85];
 
 export class CollectorScene {
   constructor({ scene, machine, input, audio, hud }) {
@@ -20,7 +33,13 @@ export class CollectorScene {
     this.roundTimer = 0;
     this.defense = machine.caseView.collector.defense_start;
     this.done = false;
+    this.converted = false;
     this.hitFlash = 0;
+    this.retryLock = 0;
+    this.cameraShake = 0;
+    this.failuresThisRound = 0;
+    this.roundHit = false;
+    this.safeVisited = false;
     this._spawnPlan = [];
 
     this._buildArena();
@@ -32,24 +51,39 @@ export class CollectorScene {
       new THREE.CylinderGeometry(ARENA_R + 2, ARENA_R + 2, 0.5, 28),
       new THREE.MeshLambertMaterial({ color: 0x101a26 })
     );
-    floor.position.y = -0.25;
+    floor.position.set(ARENA_CENTER.x, -0.25, ARENA_CENTER.z);
     this.group.add(floor);
 
     this.monster = placeholderMesh('collector');
-    this.monster.position.set(0, 1.6, 0);
+    this.monster.position.set(ARENA_CENTER.x, 1.6, ARENA_CENTER.z);
     this.group.add(this.monster);
 
     this.portal = new THREE.Mesh(
       new THREE.TorusGeometry(1.4, 0.18, 10, 32),
       new THREE.MeshBasicMaterial({ color: 0xd9a05b, transparent: true, opacity: 0 })
     );
-    this.portal.position.set(0, 2, -5);
+    this.portal.position.set(ARENA_CENTER.x, 2, ARENA_CENTER.z - 3.5);
     this.group.add(this.portal);
+
+    this.safeZone = new THREE.Group();
+    this.safeFill = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, 0.06, 32),
+      new THREE.MeshBasicMaterial({ color: 0x69e0c2, transparent: true, opacity: 0.22 })
+    );
+    this.safeRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1, 0.1, 8, 32),
+      new THREE.MeshBasicMaterial({ color: 0x9ff2e0, transparent: true, opacity: 0.95 })
+    );
+    this.safeRing.rotation.x = Math.PI / 2;
+    this.safeZone.add(this.safeFill, this.safeRing);
+    this.safeZone.position.set(0, 0.04, PLAYER_Z);
+    this.group.add(this.safeZone);
   }
 
   _buildPlayer() {
     this.player = placeholderMesh('lin_che');
-    this.player.position.set(0, 1, 5);
+    this.player.position.set(ARENA_CENTER.x, 1, PLAYER_Z);
+    this.player.material.transparent = true;
     this.group.add(this.player);
     this.vy = 0;
     this.onGround = true;
@@ -57,115 +91,201 @@ export class CollectorScene {
 
   start() {
     this._buildPlayer();
-    this.machine.events.push('collector_round_start', { round: 1 });
-    this.round = 1;
-    this.roundTimer = 0;
-    this._spawnPlan = this._planRound(1);
+    this._startRound(1);
     this.hud?.setDefense(this.defense);
   }
 
-  // 每轮的弹幕计划（可读预告 + 安全区缺口）
-  _planRound(n) {
-    const plan = [];
-    const count = 6 + n * 2;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + n;
-      plan.push({ at: i * 0.7 + 0.5, angle, safe: i % 4 === 3 });
+  _safeRadius() {
+    return this.failuresThisRound >= 2 ? ASSIST_SAFE_RADIUS : BASE_SAFE_RADIUS;
+  }
+
+  _safeX() {
+    return SAFE_X[Math.max(0, this.round - 1)] ?? SAFE_X[SAFE_X.length - 1];
+  }
+
+  _isInSafeZone() {
+    if (!this.player || this.round < 1 || this.round > ROUND_COUNT) return false;
+    return Math.abs(this.player.position.x - this._safeX()) <= this._safeRadius();
+  }
+
+  _startRound(n) {
+    this.round = n;
+    this.roundTimer = 0;
+    this.retryLock = 0;
+    this.roundHit = false;
+    this.safeVisited = false;
+    this._spawnPlan = BURST_TIMES.map((at) => ({ at, fired: false }));
+    this._clearProjectiles();
+    this._updateSafeZoneVisual();
+    this.machine.events.push('collector_round_start', {
+      round: n,
+      failures: this.failuresThisRound,
+      assisted: this.failuresThisRound >= 2
+    });
+  }
+
+  _updateSafeZoneVisual() {
+    const radius = this._safeRadius();
+    this.safeZone.position.x = this._safeX();
+    this.safeFill.scale.set(radius, 1, radius);
+    this.safeRing.scale.set(radius, radius, radius);
+    const assisted = this.failuresThisRound >= 2;
+    this.safeFill.material.color.setHex(assisted ? 0xffd27a : 0x69e0c2);
+    this.safeRing.material.color.setHex(assisted ? 0xffd27a : 0x9ff2e0);
+  }
+
+  _fireWall() {
+    const safeX = this._safeX();
+    const radius = this._safeRadius();
+    for (const x of PROJECTILE_LANES) {
+      // 安全区留出清楚的缺口；扩大辅助仍保留 x=0 的危险，零输入不能通关。
+      if (Math.abs(x - safeX) <= radius) continue;
+      const mesh = placeholderMesh('projectile');
+      mesh.position.set(x, 1, ARENA_CENTER.z - ARENA_R - 1);
+      this.group.add(mesh);
+      this.projectiles.push({ mesh });
     }
-    return plan;
+    this.audio?.whoosh();
+    this.machine.events.push('collector_wall_fired', {
+      round: this.round,
+      safe_x: safeX,
+      safe_radius: radius
+    });
   }
 
-  _telegraph(angle) {
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, 0.9, 16),
-      new THREE.MeshBasicMaterial({ color: 0xd4484f, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(Math.cos(angle) * ARENA_R, 0.05, 5 + Math.sin(angle) * ARENA_R);
-    this.group.add(ring);
-    setTimeout(() => {
-      this.group.remove(ring);
-      ring.geometry.dispose(); ring.material.dispose();
-    }, 600);
+  _clearProjectiles() {
+    for (const pr of this.projectiles) {
+      this.group.remove(pr.mesh);
+      pr.mesh.geometry.dispose();
+      pr.mesh.material.dispose();
+    }
+    this.projectiles = [];
   }
 
-  _fire(angle) {
-    const mesh = placeholderMesh('projectile');
-    const dir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-    mesh.position.set(-dir.x * ARENA_R, 1, 5 - dir.z * ARENA_R);
-    this.group.add(mesh);
-    this.projectiles.push({ mesh, dir: dir.clone() });
+  _failRound(reason) {
+    if (this.retryLock > 0 || this.round < 1 || this.round > ROUND_COUNT) return;
+    this.roundHit = reason === 'hit';
+    this.failuresThisRound += 1;
+    this.retryLock = RETRY_LOCK_SECONDS;
+    this.hitFlash = RETRY_LOCK_SECONDS;
+    this.cameraShake = 0.35;
+    this.vy = 0;
+    this.onGround = true;
+    this._clearProjectiles();
+    this._updateSafeZoneVisual();
+    this.audio?.hit();
+    this.machine.events.push('collector_round_failed', {
+      round: this.round,
+      reason,
+      failures: this.failuresThisRound,
+      assisted: this.failuresThisRound >= 2
+    });
+  }
+
+  _retryRound() {
+    this.player.position.set(ARENA_CENTER.x, 1, PLAYER_Z);
+    this._startRound(this.round);
+    this.machine.events.push('collector_round_retry', {
+      round: this.round,
+      failures: this.failuresThisRound
+    });
+  }
+
+  _completeRound() {
+    const defenseDrop = this.round === ROUND_COUNT
+      ? this.defense
+      : Math.ceil(this.machine.caseView.collector.defense_start / ROUND_COUNT);
+    this.defense = Math.max(0, this.defense - defenseDrop);
+    this.hud?.setDefense(this.defense);
+    this.monster.scale.setScalar(1 - (100 - this.defense) / 200);
+    this.machine.events.push('collector_defense_drop', {
+      round: this.round,
+      defense: this.defense,
+      safe_zone_completed: true
+    });
+
+    if (this.round < ROUND_COUNT) {
+      this.failuresThisRound = 0;
+      this._startRound(this.round + 1);
+    } else {
+      this.round = ROUND_COUNT + 1;
+      this.roundTimer = 0;
+      this.safeZone.visible = false;
+      this._clearProjectiles();
+    }
   }
 
   update(dt) {
     if (this.done) return;
     const p = this.player.position;
 
-    if (this.input.isDown('left')) p.x = Math.max(-ARENA_R, p.x - 7 * dt);
-    if (this.input.isDown('right')) p.x = Math.min(ARENA_R, p.x + 7 * dt);
-    if (this.input.isDown('forward')) p.z = Math.max(5 - ARENA_R, p.z - 7 * dt);
-    if (this.input.isDown('back')) p.z = Math.min(5 + ARENA_R, p.z + 7 * dt);
-    if (this.input.isDown('jump') && this.onGround) { this.vy = JUMP_V; this.onGround = false; }
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.cameraShake = Math.max(0, this.cameraShake - dt);
+    this.player.visible = Math.floor(this.hitFlash * 20) % 2 === 0;
+
+    if (this.retryLock > 0) {
+      this.retryLock = Math.max(0, this.retryLock - dt);
+      if (this.retryLock === 0) this._retryRound();
+      this._updateCamera();
+      return;
+    }
+
+    // 战斗与整局承诺一致：只使用左右、跳跃与 E；不读取 forward/back。
+    if (this.input.isDown('left')) p.x = Math.max(-ARENA_R, p.x - PLAYER_SPEED * dt);
+    if (this.input.isDown('right')) p.x = Math.min(ARENA_R, p.x + PLAYER_SPEED * dt);
+    if (this.input.isDown('jump') && this.onGround) {
+      this.vy = JUMP_V;
+      this.onGround = false;
+      this.audio?.jump();
+    }
     this.vy -= GRAVITY * dt;
     p.y += this.vy * dt;
     if (p.y <= 1) { p.y = 1; this.vy = 0; this.onGround = true; }
+    p.z = PLAYER_Z;
 
-    // 圆形场地约束
-    const r = Math.hypot(p.x, p.z - 5);
-    if (r > ARENA_R) { p.x *= (ARENA_R / r); p.z = 5 + (p.z - 5) * (ARENA_R / r); }
-
-    // 弹幕推进与命中
-    this.hitFlash = Math.max(0, this.hitFlash - dt);
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const pr = this.projectiles[i];
-      pr.mesh.position.addScaledVector(pr.dir, 6.5 * dt);
-      if (pr.mesh.position.distanceTo(p) < 0.7) {
-        this.group.remove(pr.mesh);
-        pr.mesh.geometry.dispose(); pr.mesh.material.dispose();
-        this.projectiles.splice(i, 1);
-        this.hitFlash = 0.35; // 受击只影响短暂移动与视觉，不封锁故事
-        this.audio?.hit();
-        this.machine.events.push('collector_hit', {});
-        continue;
-      }
-      if (Math.abs(pr.mesh.position.x) > 12 || Math.abs(pr.mesh.position.z - 5) > 12) {
-        this.group.remove(pr.mesh);
-        pr.mesh.geometry.dispose(); pr.mesh.material.dispose();
-        this.projectiles.splice(i, 1);
-      }
-    }
-
-    // 当前轮推进
-    const cfg = this.machine.caseView.collector;
-    if (this.round >= 1 && this.round <= 3) {
+    if (this.round >= 1 && this.round <= ROUND_COUNT) {
       this.roundTimer += dt;
-      for (const s of this._spawnPlan) {
-        if (!s.fired && this.roundTimer >= s.at) {
-          s.fired = true;
-          if (!s.safe) { this._telegraph(s.angle); this._fire(s.angle); this.audio?.whoosh(); }
+      if (this._isInSafeZone()) this.safeVisited = true;
+      const pulse = 0.9 + Math.sin(this.roundTimer * 5) * 0.08;
+      this.safeRing.scale.setScalar(this._safeRadius() * pulse);
+
+      for (const burst of this._spawnPlan) {
+        if (!burst.fired && this.roundTimer >= burst.at) {
+          burst.fired = true;
+          this._fireWall();
         }
       }
-      if (this.roundTimer > 6 + this.round) {
-        // 该轮存活完成 → 防御按轮下降
-        this.defense = Math.max(0, this.defense - cfg.defense_per_round[this.round - 1]);
-        this.hud?.setDefense(this.defense);
-        this.monster.scale.setScalar(1 - (100 - this.defense) / 200);
-        this.machine.events.push('collector_defense_drop', { round: this.round, defense: this.defense });
-        if (this.round < 3) {
-          this.round += 1;
-          this.roundTimer = 0;
-          this._spawnPlan = this._planRound(this.round);
-          this.machine.events.push('collector_round_start', { round: this.round });
-        } else {
-          this.round = 4; // 全部完成
+
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        const pr = this.projectiles[i];
+        pr.mesh.position.z += PROJECTILE_SPEED * dt;
+        if (pr.mesh.position.distanceTo(p) < 0.72 && p.y < 1.7) {
+          this.group.remove(pr.mesh);
+          pr.mesh.geometry.dispose();
+          pr.mesh.material.dispose();
+          this.projectiles.splice(i, 1);
+          this.machine.events.push('collector_hit', { round: this.round });
+          this._failRound('hit');
+          break;
         }
+        if (pr.mesh.position.z > ARENA_CENTER.z + ARENA_R + 4) {
+          this.group.remove(pr.mesh);
+          pr.mesh.geometry.dispose();
+          pr.mesh.material.dispose();
+          this.projectiles.splice(i, 1);
+        }
+      }
+
+      if (this.retryLock === 0 && this.roundTimer >= ROUND_DURATION) {
+        if (this.safeVisited && this._isInSafeZone() && !this.roundHit) this._completeRound();
+        else this._failRound(this.safeVisited ? 'left_safe_zone' : 'safe_zone_missed');
       }
     }
 
-    // 防御归零 → 接近并交互 → 转化（不击杀）
+    // 防御归零后仍需玩家靠近并按 E，完成“转化”而非自动击杀。
     if (this.defense <= 0 && !this.converted) {
       this.portal.material.opacity = 0.5 + Math.sin(this.roundTimer * 4) * 0.2;
-      if (p.distanceTo(this.monster.position) < 2.4 && this.input.isDown('interact')) {
+      if (p.distanceTo(this.monster.position) < 6.2 && this.input.isDown('interact')) {
         this.converted = true;
         this.done = true;
         this.machine.conversionDone = true;
@@ -177,13 +297,43 @@ export class CollectorScene {
       }
     }
 
-    // 相机
+    this._updateCamera();
+  }
+
+  _updateCamera() {
     const cam = this.scene.userData.camera;
-    if (cam) cam.position.set(p.x * 0.5, 4.2, p.z + 7.5);
-    if (cam) cam.lookAt(0, 1.4, 0);
+    if (!cam) return;
+    const shake = this.cameraShake > 0 ? Math.sin(this.cameraShake * 90) * 0.12 : 0;
+    cam.position.set(this.player.position.x * 0.25 + shake, 4.2 + shake, PLAYER_Z + 7.5);
+    cam.lookAt(ARENA_CENTER.x, 1.4, ARENA_CENTER.z);
+  }
+
+  // 测试与演示只读状态；不暴露任何状态写入口。
+  testState() {
+    return {
+      round: this.round,
+      roundCount: ROUND_COUNT,
+      roundTimer: this.roundTimer,
+      defense: this.defense,
+      failures: this.failuresThisRound,
+      assisted: this.failuresThisRound >= 2,
+      safeX: this._safeX(),
+      safeRadius: this._safeRadius(),
+      inSafeZone: this._isInSafeZone(),
+      safeVisited: this.safeVisited,
+      roundHit: this.roundHit,
+      retryLocked: this.retryLock > 0,
+      hitFlash: this.hitFlash,
+      cameraShake: this.cameraShake,
+      projectileCount: this.projectiles.length,
+      arenaCenter: { ...ARENA_CENTER },
+      playerZ: PLAYER_Z,
+      controls: ['left', 'right', 'jump', 'interact']
+    };
   }
 
   dispose() {
+    this._clearProjectiles();
     this.scene.remove(this.group);
     this.group.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();

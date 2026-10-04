@@ -1,0 +1,130 @@
+diff --git a/game/web/index.html b/game/web/index.html
+--- a/game/web/index.html
++++ b/game/web/index.html
+@@ -8,5 +8,6 @@
+   <body>
+     <div id="app" data-app="ghost-inside">
++      <div id="scene-backdrop" aria-hidden="true"></div>
+       <canvas id="stage"></canvas>
+       <div id="ui"></div>
+     </div>
+diff --git a/game/web/src/main.js b/game/web/src/main.js
+--- a/game/web/src/main.js
++++ b/game/web/src/main.js
+@@ -20,6 +20,36 @@ const clock = new GameClock();
+ const input = new Input();
+ const audio = new Audio();
+ 
++// 每个节拍共享同一套远景画面。图片只负责氛围，不参与碰撞、判定或状态流转。
++const BACKDROPS = Object.freeze({
++  boot: new URL('./assets/scenes/start.png', import.meta.url).href,
++  life_slice: new URL('./assets/scenes/dinner.png', import.meta.url).href,
++  garden: new URL('./assets/scenes/garden.png', import.meta.url).href,
++  collector: new URL('./assets/scenes/collector.png', import.meta.url).href,
++  dinner: new URL('./assets/scenes/dinner.png', import.meta.url).href,
++  pollution: new URL('./assets/scenes/pollution.png', import.meta.url).href,
++  statement: new URL('./assets/scenes/pollution.png', import.meta.url).href,
++  epilogue: new URL('./assets/scenes/epilogue.png', import.meta.url).href,
++  closed: new URL('./assets/scenes/epilogue.png', import.meta.url).href
++});
++
++const backdrop = document.getElementById('scene-backdrop');
++for (const url of new Set(Object.values(BACKDROPS))) {
++  const image = new Image();
++  image.src = url;
++}
++
++function setBeatBackdrop(beat) {
++  const url = BACKDROPS[beat] ?? BACKDROPS.boot;
++  backdrop.style.setProperty('--scene-image', `url("${url}")`);
++  backdrop.dataset.beat = beat;
++  backdrop.classList.remove('scene-backdrop-enter');
++  void backdrop.offsetWidth;
++  backdrop.classList.add('scene-backdrop-enter');
++}
++
++setBeatBackdrop('boot');
++
+ const canvas = document.getElementById('stage');
+ let renderer;
+ try {
+@@ -30,6 +58,9 @@ try {
+   throw e;
+ }
+ const scene = createScene();
++// 背景由 DOM 远景层承载；降低 WebGL 画布不透明度，让 3D 空间与远景自然融合。
++scene.background = null;
++renderer.setClearColor(0x0a0e14, 0);
+ // 灯光：所有物件是 MeshLambertMaterial（受光材质），没有灯光整场景渲染为纯黑。
+ // 低强度环境光 + 单方向主光，保持「过分完美的冷调花园」氛围同时保证可读。
+ scene.add(new THREE.AmbientLight(0x7d8fb3, 0.65));
+@@ -130,6 +161,7 @@ function removeTutorialSkip() {
+ }
+ 
+ function onBeatChange(m) {
++  setBeatBackdrop(m.beat);
+   removeTutorialSkip();
+   story.beatLabel({
+     life_slice: '序 · 生活切片',
+diff --git a/game/web/src/styles.css b/game/web/src/styles.css
+--- a/game/web/src/styles.css
++++ b/game/web/src/styles.css
+@@ -11,18 +11,52 @@
+ * { box-sizing: border-box; margin: 0; padding: 0; }
+ html, body { height: 100%; background: var(--ink); color: var(--text);
+   font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; overflow: hidden; }
+-#app { position: relative; width: 100vw; height: 100vh; }
+-#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
++#app { position: relative; width: 100vw; height: 100vh; isolation: isolate; background: var(--ink); }
++#scene-backdrop {
++  --scene-image: none;
++  position: absolute; inset: 0; z-index: 0; overflow: hidden;
++  background:
++    radial-gradient(circle at 50% 42%, rgba(46, 71, 102, 0.38), transparent 58%),
++    linear-gradient(145deg, #101b29 0%, var(--ink) 58%, #080b10 100%);
++}
++#scene-backdrop::before {
++  content: ''; position: absolute; inset: -2%;
++  background-image: var(--scene-image);
++  background-size: cover; background-position: center;
++  filter: saturate(0.82) contrast(1.04) brightness(0.72);
++  transform: scale(1.04); opacity: 0.92;
++}
++#scene-backdrop::after {
++  content: ''; position: absolute; inset: 0;
++  background:
++    linear-gradient(180deg, rgba(6, 10, 16, 0.3), rgba(6, 10, 16, 0.05) 44%, rgba(6, 10, 16, 0.58)),
++    radial-gradient(ellipse at center, transparent 34%, rgba(6, 10, 16, 0.68) 100%);
++}
++#scene-backdrop.scene-backdrop-enter::before { animation: scene-backdrop-enter 0.75s ease-out both; }
++#scene-backdrop[data-beat='collector']::before,
++#scene-backdrop[data-beat='pollution']::before { filter: saturate(0.96) contrast(1.08) brightness(0.64); }
++#scene-backdrop[data-beat='epilogue']::before,
++#scene-backdrop[data-beat='closed']::before { filter: saturate(0.78) contrast(0.98) brightness(0.8); }
++@keyframes scene-backdrop-enter {
++  from { opacity: 0; transform: scale(1.075); }
++  to { opacity: 0.92; transform: scale(1.04); }
++}
++#stage { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; display: block; opacity: 0.82; }
+ #ui { position: absolute; inset: 0; pointer-events: none; }
+ #ui > * { pointer-events: auto; }
+ 
+ .overlay { position: absolute; inset: 0; display: flex; flex-direction: column;
+-  align-items: center; justify-content: center; background: var(--panel); z-index: 10; }
+-.overlay.dim { background: rgba(10, 14, 20, 0.6); }
++  align-items: center; justify-content: center; background: rgba(10, 14, 20, 0.68); z-index: 10;
++  backdrop-filter: blur(2px); }
++.overlay.dim { background: rgba(10, 14, 20, 0.48); }
+ 
+-.card { max-width: 640px; width: min(92vw, 640px); background: rgba(16, 22, 32, 0.96);
++.card { max-width: 640px; width: min(92vw, 640px); background: rgba(16, 22, 32, 0.92);
+   border: 1px solid var(--blue); border-radius: 8px; padding: 28px 32px;
+-  box-shadow: 0 0 40px rgba(53, 80, 122, 0.35); }
++  box-shadow: 0 0 40px rgba(3, 7, 12, 0.72), 0 0 28px rgba(53, 80, 122, 0.28); }
+ .card .tag { font-size: 12px; letter-spacing: 0.2em; color: var(--cyan); margin-bottom: 12px; }
+ .card .line { font-size: 18px; line-height: 1.8; margin: 10px 0; }
+ .card .line.ghost { color: var(--cyan); font-size: 15px; }
++
++@media (prefers-reduced-motion: reduce) {
++  #scene-backdrop.scene-backdrop-enter::before { animation: none; }
++}
