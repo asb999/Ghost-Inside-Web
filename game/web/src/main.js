@@ -37,7 +37,7 @@ const camera = createCamera({ fov: 58, pos: [0, 6, -9] });
 class GreyboxHud {
   constructor(root) {
     this.el = document.createElement('div'); this.el.className = 'greybox-hud';
-    this.el.innerHTML = '<div class="gb-title">第一关 · 留一个位置</div><div class="gb-objective"></div><div class="gb-load"></div><div class="gb-subtitle"></div><div class="gb-prompt"></div><div class="gb-finish"><div>第一关完成</div><strong>留一个位置</strong><span>给家人，也给自己。</span><button data-action="restart">重新开始</button></div>';
+    this.el.innerHTML = '<div class="gb-title">第一关 · 留一个位置</div><div class="gb-objective"></div><div class="gb-load"></div><div class="gb-subtitle"></div><div class="gb-prompt"></div><div class="gb-finish"></div>';
     root.appendChild(this.el);
     this.objectiveEl = this.el.querySelector('.gb-objective');
     this.subtitleEl = this.el.querySelector('.gb-subtitle');
@@ -45,7 +45,6 @@ class GreyboxHud {
     this.loadEl = this.el.querySelector('.gb-load');
     this.finishEl = this.el.querySelector('.gb-finish');
     this.el.classList.add('inactive');
-    this.finishEl.querySelector('[data-action="restart"]').addEventListener('click', () => location.reload());
   }
   objective(text) { this.objectiveEl.textContent = text; }
   subtitle(text) { this.subtitleEl.textContent = text; this.subtitleEl.classList.toggle('visible', Boolean(text)); }
@@ -55,7 +54,20 @@ class GreyboxHud {
     const names = { phone: '父亲的手机', medicine: '母亲的药盒', application: '弟弟的申请表' };
     this.loadEl.textContent = carried.length ? carried.map((id) => `■ ${names[id]}`).join('　') : '';
   }
-  finish() { this.finishEl.classList.add('visible'); this.objective(''); this.loadEl.textContent = ''; this.prompt(''); this.subtitle(''); }
+  finish(snapshot) {
+    const hesitated = (snapshot?.history ?? []).some((e) => e.type === 'notice_discard_rejected');
+    this.finishEl.innerHTML = `
+      <div>调理记录 · CASE 001</div>
+      <strong>留一个位置</strong>
+      <span class="gb-belief">旧理解：替家人拿起一切，才算可靠</span>
+      <span class="gb-belief gb-belief-new">新理解：把责任放回原处，也给自己留一个位置</span>
+      ${hesitated ? '<span class="gb-note">他想过放下那张通知。最后，还是把它放回了自己的位置。</span>' : ''}
+      <span>给家人，也给自己。</span>
+      <button data-action="restart">重新开始</button>`;
+    this.finishEl.querySelector('[data-action="restart"]').addEventListener('click', () => location.reload());
+    this.finishEl.classList.add('visible');
+    this.objective(''); this.loadEl.textContent = ''; this.prompt(''); this.subtitle('');
+  }
   activate() { this.el.classList.remove('inactive'); }
 }
 
@@ -88,9 +100,10 @@ function showChapterIntro() {
   const gl = webglDiagnostics();
   const overlay = document.createElement('div'); overlay.className = 'overlay'; overlay.dataset.story = 'chapter-intro';
   overlay.innerHTML = `<div class="card start-card">
-    <div class="tag">GHOST INSIDE：心灵调理师</div>
+    <div class="tag">GHOST INSIDE · 2077 心灵调理接入</div>
     <div class="chapter">第一关 · 留一个位置</div>
-    <div class="line">林澈总是家里最可靠的那个人。今晚，一封只属于他的通知正在等回复。</div>
+    <div class="line">2077 年，算法替人们优化情绪、规划人生、维系关系。林澈是家里「最可靠」的那个人——今晚，一封只属于他的调动通知，正在等他回复。</div>
+    <div class="small">你是心灵调理师。接入来访者林澈的记忆现场，重新经历这个晚上：调查细节，把责任放回原处，也把他还给自己。</div>
     <div class="small">WASD 移动 · Space 跳跃 · E 拿起、放下或互动</div>
     ${gl.webgl2 ? '' : '<div class="line warn">请使用支持 WebGL 2 的桌面版 Chrome 或 Edge。</div>'}
     <button id="btn-start" data-action="start">回到那天晚上</button>
@@ -122,7 +135,7 @@ clock.start((dtMs) => {
   renderer.info.reset(); renderer.render(scene, camera);
   lastFrameStats = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
   document.body.classList.toggle('ending', machine.phase === 'ENDING');
-  if (machine.phase === 'ENDING' && !endingShown) { endingShown = true; hud.finish(); }
+  if (machine.phase === 'ENDING' && !endingShown) { endingShown = true; hud.finish(machine.readSnapshot()); }
 });
 
 const params = new URLSearchParams(location.search);

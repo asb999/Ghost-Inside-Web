@@ -279,14 +279,14 @@ export class ResponsibilityScene {
     if (this.machine.phase === 'TRANSFER_NOTICE_REVEAL') {
       if (id === 'notice') {
         this.machine.event('notice_picked'); marker.visible = false;
-        this._show('异地调动确认｜收件人：林澈｜请于今晚前回复');
+        this._show('记忆里的他：「这个家离不开我。」　通知上写：异地调动 · 第三次获批 · 均由本人撤回。', 7);
         this.hud.objective('处理这张通知');
       } else if (id === 'discard' && this.machine.rejectNotice()) {
         this.discardTimer = 1.0;
         this._show('电话：机会给你留到今晚。去不去，你自己想好。');
         this.hud.objective('这一次，没有人在等他处理');
       } else if (id === 'keep' && this.machine.keepNotice()) {
-        this._show('通知已保留'); this.noticeGroup.visible = false;
+        this._show('Ghost：不是删除什么，而是把它放回属于他的位置。'); this.noticeGroup.visible = false;
         this.player.position.copy(new THREE.Vector3(this.courseCheckpoint.x, this.courseCheckpoint.y, this.courseCheckpoint.z));
         this.velocityY = 0; this.grounded = true; this.coursePassArmed = true;
         this.hud.objective('走廊再次复原 · 带着自己的选择跑到终点'); this.audio.success();
@@ -412,11 +412,11 @@ export class ResponsibilityScene {
     if (!which) { this.respawnTimer = .65; return; }
     this.coursePassArmed = true; this.pendingRespawn = this.checkpoint; this.respawnTimer = .85; this.audio.hit();
     if (which === 'first') {
-      this._show('Ghost：路没有变。');
+      this._show('Ghost：路没有变。他替每个人拿起来的，都还背在身上。');
       this.hud.objective('看看这些东西从哪里来的');
       this.memoryGroup.visible = true;
     } else {
-      this._show('Ghost：刚才掉出来的是什么？');
+      this._show('Ghost：东西都还回去了，他还是跳不过。压住他的，在更里面。', 4.2);
       this.hud.objective('捡起那张纸');
       this.noticeGroup.visible = true;
     }

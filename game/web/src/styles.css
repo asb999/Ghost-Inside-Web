@@ -220,6 +220,9 @@ textarea { width: 100%; min-height: 72px; background: rgba(53, 80, 122, 0.12);
 .gb-finish div { color: #6fd3e8; font-size: 13px; letter-spacing: .28em; }
 .gb-finish strong { color: #f5efe4; font-size: clamp(30px, 5vw, 56px); font-weight: 500; }
 .gb-finish span { color: #d9a05b; font-size: 17px; }
+.gb-finish .gb-belief { color: #a8b6c2; font-size: 15px; letter-spacing: .06em; }
+.gb-finish .gb-belief-new { color: #ffce8a; }
+.gb-finish .gb-note { color: #7d8ea0; font-size: 13px; }
 .gb-finish button { margin-top: 20px; min-width: 180px; background: rgba(111,211,232,.1); }
 .game-home { padding: 0; align-items: stretch; justify-content: flex-end; background-color: #050a11;
   background-position: center; background-size: cover; background-repeat: no-repeat; }
