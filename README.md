@@ -10,6 +10,13 @@
 
 没有答题，没有评分，失败不会死亡——只有一个可以被重新理解的晚上。
 
+## 在线试玩 & 演示视频
+
+- **在线试玩（GitHub Pages，打开即玩）**：https://asb999.github.io/Ghost-Inside-Web/
+- **通关解说视频（中文语音解说 · 中英双语字幕）**：[Bilibili · BV1VjpP6tEZ2](https://www.bilibili.com/video/BV1VjpP6tEZ2)
+  - 本地副本：[`game/web/docs/walkthrough_解说版.mp4`](game/web/docs/walkthrough_解说版.mp4)（1 分 25 秒）
+  - 赛事提交材料包（封面图 / 关键帧 / 角色 multi-view 设定图）见 `game/web/docs/screenshots/`
+
 | 开始 | 负重 | 记忆解谜 | 最终跳跃 | 通关 |
 |---|---|---|---|---|
 | ![开始](game/web/docs/screenshots/00-game-start.png) | ![负重](game/web/docs/screenshots/02-full-load.png) | ![记忆](game/web/docs/screenshots/04-memory-puzzle.png) | ![跳跃](game/web/docs/screenshots/06-final-landing.png) | ![通关](game/web/docs/screenshots/08-level-complete.png) |
