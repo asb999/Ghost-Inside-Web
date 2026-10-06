@@ -1,5 +1,0 @@
-[FAIL] R01_LAYOUT: Canvas/UI layout or stylesheet missing
-[FAIL] R02_GARDEN_PIXELS: Garden not visible: player=0, floor=0
-[FAIL] R03_COLLECTOR_PIXELS: Collector not visible: {"player":0,"floor":0,"red":0}
-[PASS] R04_NO_RAF_LIVE
-[PASS] R05_NO_PAGE_ERRORS

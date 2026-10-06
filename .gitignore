@@ -1,18 +1,11 @@
-# 白名单式：只跟踪本任务相关文件，其余全部忽略
+# 白名单式：公开仓库只跟踪 Web Demo 本体
 /*
 !.gitignore
-!*.md
-!ask_astra.sh
+!README.md
 !game/
-!data/
-!.astra/
-!.workbuddy/
-!Ghost Inside_2.5D_Prototype_Building/
-# 大文件与产物
-Godot_Project.zip
-*.zip
+game/*
+!game/web/
+# 依赖与构建产物
 game/web/node_modules/
 game/web/dist/
-.astra/reports/
-.astra/harness/fixtures/tmp/
-Ghost Inside_2.5D_Prototype_Building/node_modules/
+*.zip

@@ -1,7 +1,0 @@
-status=PASS
-timestamp=2026-10-05T16:45:58.704Z
-harness=node .astra/harness/check.mjs
-passed=13
-failed=0
-exit_code=0
-note=V0.6 alternating knee and elbow gait, hidden loading fallback, and companion scale verified end to end
