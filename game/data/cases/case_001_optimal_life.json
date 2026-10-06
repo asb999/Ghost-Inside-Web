@@ -83,7 +83,7 @@
         "id": "B01",
         "title": "感谢不等于交出决定权",
         "text": "承认家庭付出，同时保留改变与选择的权利。",
-        "unlock_event": "pollution_event_only_a"
+        "unlock_event": "pollution_resist"
       },
       {
         "id": "B02",
@@ -577,31 +577,31 @@
       {
         "id": "PE1",
         "kind": "blur_c",
-        "ui_line": "家庭期待 +12 · 社会评价 +8 · AI 推荐度 +15",
+        "ui_line": "“我不知道”正在被抹成空白。",
         "after": "C. ……"
       },
       {
         "id": "PE2",
         "kind": "delete_c",
-        "ui_line": "检测到无效答案。",
+        "ui_line": "系统判定：不知道，不是一个可以保留的答案。",
         "after": ""
       },
       {
         "id": "PE3",
         "kind": "delete_b",
-        "ui_line": "",
+        "ui_line": "“先停下来”被当作了逃避。",
         "after": ""
       },
       {
         "id": "PE4",
         "kind": "only_a",
-        "ui_line": "已为您保留最优选项。",
+        "ui_line": "只剩一条路时，就不需要再问他想要什么。",
         "after": "A. 继续"
       },
       {
         "id": "PE5",
         "kind": "auto_select",
-        "ui_line": "已为您选择最优人生路径：继续读博。",
+        "ui_line": "系统正在替他按下确认：继续读博。",
         "after": ""
       }
     ]

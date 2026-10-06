@@ -1,113 +1,140 @@
-# PLAN
+[S1] Fool-proof Steps
 
-## [S1] 傻瓜级步骤 Fool-proof Steps
+1. 保留现有 Three.js 渲染、输入、时钟与合成音效，只替换当前关卡入口。
+2. 建立一份单一关卡数据，固定四个物品、状态迁移、负重倍率与关卡阶段。
+3. 建立连续 Greybox 场景：家庭教学区、责任收集区、同一断层、三个记忆区、通知区、终点。
+4. 所有推进只接受 WASD、Space、E；失败自动回到同一断层起点，不死亡、不丢物品。
+5. 以简短目标、字幕、身上可见物品、落地声与空间变化解释剧情，移除旧做题界面。
+6. 建立浏览器自动游玩脚本，按真实输入跑完整闭环并截图。
+7. 构建、运行、自动验收；任何失败先修复再重跑。
 
-1. 保存当前 `git status --short`，确认没有用户未提交改动；读取任务、当前状态机、花园、收集者、污染 UI、素材与现有检查。
-2. 从 `New Assets_20261004_01.png` 精确裁出 1a/1b/1c/1d/1e/3a 六张无标签场景图，写入 `game/web/src/assets/scenes/`，用图片尺寸检查确认输出非空。
-3. 在页面底层增加随节拍切换的视觉背景，WebGL 画布使用透明背景；每个节拍有纯色/渐变回退，文字层维持暗色遮罩。
-4. 花园将掌声速度降为 8.6，赞许墙开启比例降到约 42%，不改变路线和关卡条件。
-5. 重写收集者为两轮横向战斗：统一 z=0 场地中心；移除前后移动；每轮生成明确目标安全区和预告；玩家在结算时位于安全区且未受击才降防。受击产生短暂锁定、闪烁、震屏并重开短轮；连续失败两次扩大安全区。防御归零后走近按 E 转化。
-6. 污染 UI 加入五个 2.5–3 秒抵抗窗口：E 在活动窗口内记录 `pollution_resist` 并短暂延缓；错过仍继续。第五次事件后显示“按 E 撕开出口”，仅在至少抵抗一次后接受交互并进入表态。若前四次均错过，第五次延长窗口，保证可完成。
-7. 将饭桌按钮文案和密度压缩，但保留三循环与 47 条揭示。同步开始页控制说明与两轮战斗目标。
-8. 更新 Playwright 驱动：收集者只发送 left/right/jump/interact，主动进入安全区；污染对活动窗口发送 interact；新增零输入不自动通关、受击后果、竞技场边界、抵抗门禁、素材加载检查。
-9. 运行构建与完整检查；失败最多修复三轮。最后检查 `git diff` 只包含本任务文件。
+[S2] Tool Preflight
 
-## [S2] 工具预调清单 Tool Preflight
+- 运行环境：Node.js、npm、项目已安装的 Vite、Three.js、Playwright。
+- 复用文件：`src/game/input.js`、`src/game/clock.js`、`src/audio/audio.js`、`src/render/renderer.js`。
+- 不安装新依赖，不调用外部生成服务，不修改 2.5D 目录。
+- Astra Bash 脚本因本机没有 Bash 无法执行，改用同结构本地计划与本地 harness。
 
-- `node --version`：需满足 Vite 8。
-- `npm --prefix game/web --version`：确认 npm 可用。
-- `node -e "require.resolve('three',{paths:['game/web']}); require.resolve('@playwright/test',{paths:['game/web']}); console.log('ok')"`：确认依赖。
-- `Get-Command magick -ErrorAction SilentlyContinue`；若没有，使用已安装的 Python Pillow 或 PowerShell System.Drawing 做一次性裁切。
-- `git status --short`：记录工作区。
-- `npm --prefix game/web run build`：确认基线可构建。
-- `node .astra/harness/check.mjs --only H01_BUILD_HTTP`：确认浏览器检查能启动。
+[S3] Knowledge Retrieval
 
-## [S3] 知识库检索清单 Knowledge Retrieval
+- 唯一设计依据：`.astra/task.md` 与用户提供的《留一个位置》任务书。
+- 工程依据：当前 `game/web` 的 Three.js 场景、输入、固定步长测试时钟与 Playwright 配置。
+- 不继续扩写 GDD，不引入“最优人生系统”、心理诊断、证据表或新世界观。
 
-- `.astra/task.md`：本轮范围、不可破坏约束与验收意图。
-- `_gdd_demo_v13.md`：压缩版主流程与叙事边界。
-- `game/web/src/main.js`：节拍装配、控制说明、测试钩子。
-- `game/web/src/game/machine.js`：唯一转场与事件状态。
-- `game/web/src/scenes/garden.js`：速度、墙窗口与局部重试。
-- `game/web/src/scenes/collector.js`：战斗轮次、坐标、弹幕与转化。
-- `game/web/src/ui/story.js`：饭桌、污染、尾声 UI。
-- `game/data/cases/case_001_optimal_life.json`：不可改顺序的五个污染事件与文案。
-- `.astra/harness/check.mjs`：既有正式输入驱动和 H01–H16 回归。
-- `New Assets_20261004_01.png`：只裁场景区，不处理棋盘格角色区。
+[S4] Technical Details
 
-## [S4] 技术细节 Technical Details
+- 新增 `ResponsibilityMachine`：阶段、四物品迁移、三谜题完成条件、两次强制失败、最终成功。
+- 新增 `WeightSystem`：责任件数对应速度 1/.97/.93/.88，跳跃 1/.96/.90/.81；通知未保留时另有隐藏压制。
+- 新增 `ResponsibilityScene`：手动移动、跳跃、E 互动、检查点、空间触发、可视负重、连续 Greybox。
+- 新增精简 HUD：当前目标、一个互动提示、两行以内字幕、负重图标。
+- `window.__game` 仅暴露输入、固定步进与只读快照，自动验收不得直接改状态。
+- 同一断层坐标与宽度固定，只通过角色当前能力决定失败或成功。
 
-- 收集者公开测试状态增加 `round`、`roundSuccesses`、`roundHits`、`safeZoneX`、`safeZoneWidth`、`assistLevel`、`staggerRemaining`；不开放状态写入。
-- 两轮防御下降沿用案例数值前两项并归一为 50/50，事件仍叫 `collector_defense_drop`，附 `{round, defense, success:true}`。
-- 零输入时玩家不在第一轮目标安全区，结算失败且防御不降；失败两次后目标区扩大，但仍需至少一次左右输入进入。
-- 战斗坐标统一以怪物 `(0,1.6,0)`、地板 `(0,-0.25,0)` 为中心；玩家只在 x 轴移动，z 固定为 4.5；弹幕由怪物向玩家横向/竖向扫过。
-- 污染状态新增 `pollutionResists`、`pollutionWindow`、`pollutionReadyToExit`；`recordPollutionResist(step)` 仅在 UI 活动窗口调用并去重。
-- 污染每事件目标间隔约 2.8 秒，总自动事件时间约 14 秒；第五事件后不自动转场，显示 E 门禁。至少一次抵抗后可进入表态。
-- 背景素材用 CSS `background-image`，构建由 Vite 处理哈希；`#app[data-beat]` 决定图层。图片加载失败时仍保留渐变色。
-- 测试只通过正式 `Input` 动作和 DOM 按钮；不增加 `setState`、传送或直接解锁接口。
+[S5] Templates
 
-## [S5] 模具清单 Templates
+- 物品：`{ id, type, owner, weight, currentState, validTargets }`。
+- 阶段：`INTRO/TUTORIAL/COLLECT_RESPONSIBILITIES/FIRST_JUMP_FAIL/MEMORY_HUB/RESPONSIBILITIES_RESOLVED/SECOND_JUMP_FAIL/TRANSFER_NOTICE_REVEAL/TRANSFER_NOTICE_KEPT/FINAL_RUN/FINAL_JUMP/ENDING`。
+- 谜题完成：药盒 `Shared`；手机、申请表 `Returned`；通知 `Kept`。
+- 快照：阶段、玩家位置、携带物、各物品状态、速度/跳跃倍率、断层宽度、失败次数、结局状态。
 
-事件模板：
+[S6] Self-check Harness
 
-```js
-this.machine.events.push('pollution_resist', { step: this.machine.pollutionStep + 1 });
-```
+- 静态检查：构建成功；禁用旧关键词与旧做题模块入口；物品与倍率完整。
+- 行为检查：零输入不推进；教学后依次收集；第一跳失败；三谜题任意顺序完成；第二跳失败；丢弃通知被拒；保留通知；最终同一断层成功；到达结局。
+- 稳定性检查：无 pageerror、console error、资源 4xx/5xx；失败回检查点；物品状态不回退。
+- 证据：自动保存六类关键截图到 `.astra/artifacts/leave-a-place/`。
 
-节拍视觉模板：
+[S7] Success Criteria
 
-```js
-document.getElementById('app').dataset.beat = m.beat;
-```
+- 一条自动游玩路径只使用公开输入接口，从开始到 `ENDING/closed`。
+- 四个物品迁移严格，三段记忆不能跳过，通知不能被永久丢弃。
+- 0/1/2/3 责任倍率准确；三责任解除后责任倍率恢复。
+- 断层几何始终不变；第一次、第二次失败，第三次成功。
+- 失败不死亡、约一秒回起点、物品不丢；零输入无自动推进。
+- 页面无旧表态点、证据芯片、心理评分、Boss、长表格或“最优人生系统”。
+- harness 输出至少一个 `[PASS]`、零 `[FAIL]` 并退出 0；六类截图存在。
 
-正式输入测试模板：
+[S8] Risks/Rollback
 
-```js
-await page.evaluate(() => {
-  window.__game.input('interact', true);
-  window.__game.stepSimulation(120);
-  window.__game.input('interact', false);
-  window.__game.stepSimulation(80);
-});
-```
+- 风险：跳跃手感与断层宽度不匹配。处理：参数集中配置，以自动输入轨迹与人工试玩双重校准。
+- 风险：剧情仍靠文字解释。处理：优先用携带物、连接线、空间开放、失败与成功表现意义；字幕只补足人物关系。
+- 风险：浏览器自动游玩受帧率影响。处理：沿用固定步长测试时钟。
+- 回退：新关卡使用独立文件并由 `main.js` 接入，旧场景文件保留，出现问题可只恢复入口。
 
-失败辅助模板：
+## 结尾修复补充
 
-```js
-this.failures += 1;
-this.assistLevel = this.failures >= 2 ? 1 : 0;
-this.safeZoneWidth = this.assistLevel ? 3.2 : 2.2;
-```
+- 最终落地后生成单一、发光、带归属的“弟弟的消息”互动点。
+- 回复前用出口边界阻止误走；按 E 回复后解除边界并点亮前路。
+- 到达出口后显示明确的完成画面。
+- harness 增加：不回复不能结束、E 回复事件恰好一次、回复后才能进入 ENDING、完成画面可见。
 
-## [S6] 自检 Harness Self-check Harness
+## 游戏入口、重新开始与 3D 素材补充
 
-```bash harness=gameplay
-#!/usr/bin/env bash
-set -u
-status=0
-node .astra/harness/check.mjs || status=$?
-if [ "$status" -eq 0 ]; then
-  printf '%s\n' '[PASS] GAMEPLAY_AND_REGRESSION'
-  exit 0
-fi
-printf '%s\n' '[FAIL] GAMEPLAY_AND_REGRESSION'
-exit 1
-```
+- 使用用户给出的主视觉作为整体游戏开始页；“开始游戏”进入章节介绍，“进入第一关”才建立关卡。
+- 完成页新增“重新开始”，销毁当前场景、重建关卡状态、清空输入和界面并回到整体开始页。
+- 从素材总图裁出完整 Ghost，调用 Tripo v3 `/files`、`/generation/image-to-model`、`/tasks/{id}`，选 P1 低面数输出并立即保存 GLB。
+- 以 Three.js GLTFLoader 加载 Ghost；加载、纹理或模型异常时自动使用原有占位体。
+- harness 新增两段式开始页、重新开始后状态归零、第二次进入第一关、GLB 成功加载和无浏览器错误检查。
 
-## [S7] 成功标准 Success Criteria
+## 正式 3D 制作补充
 
-- `GAMEPLAY_AND_REGRESSION`：现有 H01–H16 与新增玩法断言全部通过，进程退出 0。
-- `CONTROL_PROMISE`：测试完整流程未发送 forward/back，仍到 `closed`。
-- `COLLECTOR_AGENCY`：零输入至少一次结算后防御不变；正确进入安全区两轮后防御为 0；受击事件带来可读状态；失败辅助不自动完成。
-- `ARENA_BOUNDS`：任意正式输入下玩家 x 坐标始终在地板范围，z 保持固定；弹幕源点与怪物中心一致。
-- `POLLUTION_INPUT`：进入 statement 前 history 至少含一个 `pollution_resist`；第五事件后未按 E 时仍停留 pollution；按 E 后进入 statement。
-- `ASSET_LOAD`：六张裁切图存在、尺寸大于 400×200、构建产物请求成功；collector/pollution/epilogue 对应节拍使用新图。
-- `FLOW_DURATION`：正常模拟节拍顺序不变，污染自动事件时间在 12–18 秒，收集者只有两次成功降防。
+1. 保存林澈标准 A-pose 源图，不覆盖原始立绘；生成角色模型后先做可绑骨检查，通过后才消耗动作生成额度。
+2. 下载并保存绑骨角色与待机、移动、起跳、下落、落地、互动动作；运行时把这些动作映射到玩家状态。
+3. 保留不可见的碰撞与跳跃核心，正式角色仅负责外观和动作，避免替换美术时破坏已验证手感。
+4. 建立统一的关键物件造型库，用轻量 3D 几何替换所有交互方块，并为家庭、记忆区、断层、出口增加最少必要的结构与光线层次。
+5. 携带物统一挂到角色携带节点；归还、共享、保留与丢弃拒绝时保持原有状态迁移规则。
+6. 浏览器验收同时检查角色显示、六类动作、携带物、关键物件、资源失败备用方案、完整通关与重新开始。
 
-## [S8] 风险与回滚 Risks & Rollback
+### 完成判定
 
-- 合成图低分辨率：只作模糊远景并叠暗色渐变；若影响可读性，保留 CSS 色彩回退并降低背景不透明度。
-- 战斗过难：两次失败后扩大安全区、缩短弹幕持续时间；不跳过轮次。
-- 测试依赖旧三轮假设：只修改相关驱动与断言，保留安全、证据、provider、离线、性能检查。
-- 旧 JSON 被误改：用 `git diff -- game/data/cases/white_corridor.json` 必须为空。
-- 回滚只允许逐文件或逐块：`git restore -p -- game/web/src/scenes/collector.js game/web/src/ui/story.js game/web/src/scenes/garden.js game/web/src/main.js game/web/src/styles.css .astra/harness/check.mjs`；不得使用 hard reset 或 clean。
+- 林澈正式模型能显示，角色身高比例合理，备用胶囊默认隐藏。
+- 待机、移动、起跳、下落、落地、互动均能在实际操作中触发。
+- 关键剧情物件不再呈现为同一种方块，玩家可从轮廓直接区分。
+- 正式角色资源加载失败时自动显示备用角色，关卡依旧可以完成。
+- 构建与自动完整游玩均通过，无页面错误和资源错误。
+
+## V0.4 最小增强
+
+1. 直接使用林澈现有 23 根 Mixamo 骨骼制作全身程序动作，控制双腿、双膝、双脚、骨盆、脊柱与手臂。
+2. 把原单次跳跃扩成同一路线三次穿越：三段小断层、一个横移障碍、一个剧情大断层。
+3. 小障碍失败只重置路线；只有最终大断层能推进第一次失败、通知打断与最终成功。
+4. 自动试玩必须真实跳过全部小断层和障碍，并确认三种责任状态下都完成路线。
+
+### V0.4 成功标准
+
+- 正式角色加载后至少 10 个身体部位受动作控制，左右腿必须包含在内。
+- 跑酷路线包含 3 个小断层和 1 个移动障碍，路线失败不改变剧情或物品状态。
+- 跑酷路线至少记录 3 次完整穿越；最终剧情断层仍保持两次失败、第三次成功。
+- 从开始页到完成页、重新开始和第二次进入均通过，无浏览器错误。
+
+## V0.5 朝向与步态最小修复
+
+1. 实测并固定 Tripo/Mixamo 模型的正面轴，使用目标四元数平滑转向，避免直接线性插值欧拉角。
+2. 把步态相位改为按水平位移累计，并为动作强度增加起步/停止缓动。
+3. 使用现有髋、脊柱、大小腿、脚、上臂与前臂骨骼构造支撑、抬腿、摆腿、蹬地四阶段。
+4. 在测试状态中暴露当前朝向、目标朝向、移动方向、步态相位和动作强度。
+5. 自动验收 W/A/S/D 四方向、急转向、跑步骨骼相位与完整通关，不改现有玩法验收。
+
+### V0.5 成功标准
+
+- 四个方向的角色正面与实际移动方向夹角均小于 12 度。
+- 180 度转向使用最短旋转并在 0.35 秒内基本对齐。
+- 跑动时左右大腿、膝盖、脚掌和手臂都有非零且互补的动作；停止后强度平滑回到零。
+- 原有 12 项完整关卡验收继续全部通过。
+
+## V0.6 肢体可读性与比例修复
+
+1. 把跑步周期拆成支撑、离地、摆动、落地四段；大腿负责步幅，小腿只在离地与摆动阶段屈曲，脚掌在落地前回正。
+2. 上臂保持反相摆动，前臂维持基础屈肘并在后摆时增加弯曲，避免整条手臂像直杆旋转。
+3. 林澈备用胶囊初始隐藏；GLB 成功后显示正式模型，明确失败后才显示备用角色。
+4. Ghost 正式模型的最长尺寸调整为 1.0 世界单位，并在测试快照暴露正式尺寸与目标比例。
+5. harness 在两个相差半步的采样点检查前臂、小腿姿态确实变化，并保留全部关卡验收。
+
+### V0.6 成功标准
+
+- 跑动时左右小腿最大屈曲达到 25°以上，且半步后支撑/摆动角色互换。
+- 跑动时双肘保持 12°以上基础弯曲，并随步态产生可见变化。
+- 角色资源加载中 `fallbackVisible=false`；加载成功仍为 false；加载失败时为 true。
+- Ghost 最长尺寸不超过林澈身高的 60%，同时仍清晰可见。
+- 构建、完整通关、重新开始与零错误检查全部通过。
+

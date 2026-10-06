@@ -1,851 +1,225 @@
-// check.mjs — 自检 harness runner：H01–H16，每项一行 [PASS]/[FAIL]
-// 只依据本次运行结果；详情写 .astra/reports/。
 import { spawn, execSync } from 'node:child_process';
-import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..', '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB = path.join(ROOT, 'game', 'web');
+const OUT = path.join(ROOT, '.astra', 'artifacts', 'leave-a-place');
 const REPORTS = path.join(ROOT, '.astra', 'reports');
-fs.mkdirSync(REPORTS, { recursive: true });
-
+fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(REPORTS, { recursive: true });
 const require = createRequire(path.join(WEB, 'package.json'));
 const { chromium } = require('@playwright/test');
+const PORT = 4179, checks = [];
+const pass = (id, detail = '') => { checks.push({ id, ok: true, detail }); console.log(`[PASS] ${id}${detail ? ` :: ${detail}` : ''}`); };
+const fail = (id, e) => { checks.push({ id, ok: false, error: String(e?.message ?? e) }); console.log(`[FAIL] ${id} :: ${e?.message ?? e}`); };
+const assert = (v, m) => { if (!v) throw new Error(m); };
+const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const PORT = 4179;
-const RUN_ID = `h${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
-const CHECKS = [
-  'H01_BUILD_HTTP', 'H02_NORMAL_INPUT', 'H03_ORDERED_FLOW', 'H04_CLEAN_SMOKE',
-  'H05_CASE_CONTRACT', 'H06_EVIDENCE_BOUNDARY', 'H07_COPY_LINT', 'H08_BEAT_BUDGET',
-  'H09_NO_KEY', 'H10_PROVIDER_TIMEOUT', 'H11_PROVIDER_INVALID', 'H12_OFFLINE',
-  'H13_INTERACTIVE_TIME', 'H14_RENDER_BUDGET', 'H15_DELIVERABLES', 'H16_SECRET_BOUNDARY'
-];
+async function startServer() {
+  const log = [];
+  const child = spawn(process.execPath, [path.join(WEB, 'scripts', 'start.mjs')], { cwd: WEB, env: { ...process.env, GHOST_PORT: String(PORT), GHOST_HARNESS_RUN_ID: 'leave-a-place' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stdout.on('data', (d) => log.push(String(d))); child.stderr.on('data', (d) => log.push(String(d)));
+  for (let i = 0; i < 400; i++) { if (log.join('').includes('ghost-ready')) return { child, log }; if (child.exitCode !== null) throw new Error(log.join('').slice(-1200)); await sleep(100); }
+  child.kill(); throw new Error('server timeout');
+}
 
-const serverLog = [];
-let server = null;
-let browser = null;
-let mock = null;
-let mockPort = 0;
-
-function log(line) { console.error(line); }
-
-async function startServer(extraEnv = {}) {
-  const child = spawn(process.execPath, [path.join(WEB, 'scripts', 'start.mjs')], {
-    cwd: WEB,
-    env: { ...process.env, GHOST_PORT: String(PORT), GHOST_HARNESS_RUN_ID: RUN_ID, ...extraEnv },
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  child.stdout.on('data', (d) => serverLog.push(String(d)));
-  child.stderr.on('data', (d) => serverLog.push(String(d)));
-  const t0 = Date.now();
-  while (Date.now() - t0 < 60_000) {
-    const ready = serverLog.join('').split('\n').some((l) => {
-      try {
-        const j = JSON.parse(l);
-        return j.type === 'ghost-ready' && j.runId === RUN_ID;
-      } catch { return false; }
-    });
-    if (ready) return child;
-    if (child.exitCode !== null) throw new Error(`server exited: ${serverLog.join('').slice(-800)}`);
-    await sleep(150);
+const snap = (page) => page.evaluate(() => window.__game.snapshot());
+const step = (page, ms) => page.evaluate((n) => window.__game.stepSimulation(n), ms);
+async function press(page, action, ms = 80) {
+  await page.evaluate(([a, n]) => { window.__game.input(a, true); window.__game.stepSimulation(n); window.__game.input(a, false); window.__game.stepSimulation(34); }, [action, ms]);
+}
+async function moveTo(page, x, z, tolerance = .28) {
+  for (let i = 0; i < 900; i++) {
+    const p = (await snap(page)).scene.player;
+    if (Math.abs(p.x - x) <= tolerance && Math.abs(p.z - z) <= tolerance) return;
+    const actions = [];
+    if (p.x < x - tolerance) actions.push('left'); else if (p.x > x + tolerance) actions.push('right');
+    if (p.z < z - tolerance) actions.push('forward'); else if (p.z > z + tolerance) actions.push('back');
+    // 接近目标时改用短步进：固定 50ms 的位移可能大于 2×容差，造成永久震荡
+    const ms = Math.abs(p.x - x) <= .6 && Math.abs(p.z - z) <= .6 ? 18 : 50;
+    await page.evaluate(({ actions: aa, ms: n }) => { aa.forEach((a) => window.__game.input(a, true)); window.__game.stepSimulation(n); aa.forEach((a) => window.__game.input(a, false)); }, { actions, ms });
   }
-  child.kill();
-  throw new Error('server start timeout 60s');
+  throw new Error(`move timeout ${x},${z}`);
+}
+async function interact(page, id) {
+  const s = await snap(page); const target = s.scene.activeInteractables.find((v) => v.id === id);
+  assert(target, `找不到互动点 ${id} / ${s.phase}`); await moveTo(page, target.x, target.z); await press(page, 'interact');
+}
+async function attemptGap(page, expectedPhase) {
+  const gap = (await snap(page)).scene.gap;
+  await moveTo(page, 0, gap.startZ - .45, .12);
+  await page.evaluate(() => { window.__game.input('forward', true); window.__game.input('jump', true); });
+  for (let i = 0; i < 90; i++) { await step(page, 50); if ((await snap(page)).phase === expectedPhase) break; }
+  await page.evaluate(() => { window.__game.input('forward', false); window.__game.input('jump', false); });
+  await step(page, 1100); const s = await snap(page);
+  assert(s.phase === expectedPhase, `断层结果错误，期望 ${expectedPhase}，实际 ${s.phase}，位置 ${JSON.stringify(s.scene.player)}，落地=${s.scene.playerGrounded}`); return s;
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-async function get(url) {
-  return new Promise((resolve, reject) => {
-    const req = http.get(url, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => resolve({ status: res.statusCode, body }));
-    });
-    req.on('error', reject);
-    req.setTimeout(5000, () => req.destroy(new Error('timeout')));
-  });
+async function jumpForward(page, startZ, x = null) {
+  const p = (await snap(page)).scene.player;
+  await moveTo(page, x ?? p.x, startZ, .14);
+  await page.evaluate(() => { window.__game.input('forward', true); window.__game.input('jump', true); });
+  await step(page, 700);
+  await page.evaluate(() => { window.__game.input('jump', false); window.__game.input('forward', false); });
+  await step(page, 420);
+  await step(page, 260);
 }
 
-// 严格静态文件服务（无 SPA 回退），挂载 dist 到 /ghost/
-function startStaticServer(mount) {
-  const srv = http.createServer((req, res) => {
-    const rel = req.url.replace(mount, '').split('?')[0];
-    if (rel === '/' || rel === '') {
-      const idx = path.join(WEB, 'dist', 'index.html');
-      if (fs.existsSync(idx)) {
-        res.writeHead(200).end(fs.readFileSync(idx));
-      } else res.writeHead(404).end();
-      return;
-    }
-    const file = path.join(WEB, 'dist', path.normalize(rel).replace(/^([/\\])+/, ''));
-    if (!file.startsWith(path.join(WEB, 'dist')) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-      res.writeHead(404).end('not found');
-      return;
-    }
-    res.writeHead(200).end(fs.readFileSync(file));
-  });
-  return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port })));
+async function traverseCourse(page) {
+  const course = (await snap(page)).scene.course;
+  assert(course.microGaps.length === 3 && course.active, '跑酷路线未开启');
+  await jumpForward(page, course.microGaps[0].startZ - .45, 0);
+  await jumpForward(page, 33.5, 0);
+  await jumpForward(page, course.microGaps[1].startZ - .45, 0);
+  await moveTo(page, 0, 47.5, .2);
+  await jumpForward(page, course.microGaps[2].startZ - .45, 0);
+  const after = await snap(page);
+  assert(after.scene.player.z > course.microGaps[2].endZ && after.scene.playerGrounded, `没有完成跑酷路线：${JSON.stringify(after.scene.player)}`);
 }
 
-// 故障注入 mock provider
-function startMock() {
-  const routes = {
-    '/ok': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['R01', 'E02'] }),
-    '/pick': (body) => {
-      const s = JSON.parse(body).statement ?? '';
-      if (s.includes('ACCEPT')) return { verdict: 'accept', feedback_key: 't_accept_thanks', evidence_ids: ['F01', 'F02', 'B01'] };
-      if (s.includes('REVISE')) return { verdict: 'revise', feedback_key: 't_revise_not_hate', evidence_ids: ['E03', 'F02'] };
-      return { verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['R01', 'E02'] };
-    },
-    '/invalid-json': () => 'not-json-at-all',
-    '/not-object': () => [],
-    '/missing-field': () => ({ verdict: 'hold' }),
-    '/unknown-template': () => ({ verdict: 'hold', feedback_key: 'nope', evidence_ids: ['R01'] }),
-    '/reject-verdict': () => ({ verdict: 'reject', feedback_key: 't_hold_read_first', evidence_ids: ['R01'] }),
-    '/no-evidence': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: [] }),
-    '/unknown-evidence': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['NOPE'] }),
-    '/locked-evidence': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['B02'] }),
-    '/dup-evidence': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['R01', 'R01'] }),
-    '/extra-field': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['R01'], cmd: 'unlock_all' }),
-    '/huge': () => ({ verdict: 'hold', feedback_key: 't_hold_read_first', evidence_ids: ['R01'], pad: 'x'.repeat(2 * 1024 * 1024) }),
-    '/http500': () => { const e = new Error('boom'); e.statusCode = 500; throw e; }
-  };
-  const hangs = ['/hang', '/hang-body'];
-  const cors = {
-    'content-type': 'application/json',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type'
-  };
-  const srv = http.createServer((req, res) => {
-    const route = req.url.split('?')[0];
-    if (req.method === 'OPTIONS') { res.writeHead(204, cors).end(); return; }
-    let body = '';
-    req.on('data', (c) => (body += c));
-    req.on('end', () => {
-      if (hangs.includes(route)) return; // 永不响应（/hang-body 在下方已发 header 的分支处理）
-      if (route === '/hang-body') {
-        res.writeHead(200, cors);
-        return; // header 已发，body 永不结束
-      }
-      const fn = routes[route];
-      if (!fn) { res.writeHead(404, cors).end(); return; }
-      try {
-        const out = fn(body);
-        if (typeof out === 'string') { res.writeHead(200, cors).end(out); return; }
-        res.writeHead(200, cors).end(JSON.stringify(out));
-      } catch (e) {
-        res.writeHead(e.statusCode ?? 500, cors).end('mock error');
-      }
-    });
-  });
-  return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port })));
-}
-
-// ── 流程驱动（只组合正式输入；不做任何状态直写）──
-async function clickThroughOpening(page) {
-  for (let i = 0; i < 8; i++) {
-    const btn = page.locator('[data-action="opening-next"]');
-    if ((await btn.count()) === 0) break;
-    await btn.first().click();
-    await sleep(60);
-  }
-}
-
-async function driveGarden(page) {
-  // 模拟时间推进 + 跳跃越过障碍与赞许弹幕；终点协作点：
-  // Ghost 自动固定线索 → 线索旁按 E 观察 → 终端按 E 关闭（关闭后等真实 500ms 延迟）
-  // 新手教程：点击「跳过教学」按钮（正式 UI 通道），保证后续驱动不被教学段挡住
-  await page.evaluate(() => document.getElementById('tutorial-skip')?.click());
-  await sleep(80);
-  for (let i = 0; i < 800; i++) {
-    const s = await page.evaluate(() => {
-      const g = window.__game;
-      const snap = g.snapshot();
-      return {
-        beat: snap.beat,
-        z: snap.player?.z ?? 0,
-        y: snap.player?.y ?? 1,
-        scene: snap.scene ?? null,
-        closed: snap.history.some((e) => e.id === 'terminal_closed')
-      };
-    });
-    if (s.beat !== 'garden') return;
-    if (s.closed) {
-      await page.waitForTimeout(700);
-      return;
-    }
-    const sc = s.scene ?? {};
-    if (s.z >= 91 && !s.closed) {
-      if (!sc.clueObserved) {
-        if (s.z > 91.2 && s.z <= 95.6) {
-          await page.evaluate(() => {
-            window.__game.input('interact', true);
-            window.__game.stepSimulation(150);
-            window.__game.input('interact', false);
-            window.__game.stepSimulation(50); // 处理松键帧，保证下次按压是边沿
-          });
-        } else {
-          await page.evaluate(() => window.__game.stepSimulation(300));
-        }
-        continue;
-      }
-      // 已观察：按 E 关闭终端（按住交互的同时必须推进模拟；测试模式下 RAF 已停）
-      await page.evaluate(() => {
-        window.__game.input('interact', true);
-        window.__game.stepSimulation(200);
-      });
-      await page.waitForTimeout(700);
-      await page.evaluate(() => {
-        window.__game.input('interact', false);
-        window.__game.stepSimulation(100);
-      });
-      continue;
-    }
-    // 障碍（44/58）与赞许弹幕（50/84）跳跃越过；24 在一阶段无惩罚、不需跳
-    const jumpZ = [44, 50, 58, 84].find((z) => z > s.z - 0.4);
-    if (jumpZ !== undefined && jumpZ - s.z < 3.0 && s.y <= 1.01) {
-      await page.evaluate(() => {
-        window.__game.input('jump', true);
-        window.__game.stepSimulation(400);
-        window.__game.input('jump', false);
-      });
-      continue;
-    }
-    await page.evaluate(() => window.__game.stepSimulation(300));
-  }
-  throw new Error('garden 800 轮未完成');
-}
-
-async function driveCollector(page) {
-  // 探针式驱动：每个循环在单次 evaluate 内完成「读取 → 决策 → 按住 → 推进 → 松开 → 复读」，
-  // 避免跨 evaluate 的状态错位；移动用 120ms 短步，进入安全区后保持。
-  for (let i = 0; i < 300; i++) {
-    const r = await page.evaluate(() => {
-      const s0 = window.__game.snapshot();
-      if (s0.beat !== 'collector') return { done: true };
-      if (s0.history.some((e) => e.id === 'collector_converted')) return { done: true };
-      const sc = s0.scene ?? {};
-      if ((sc.defense ?? 1) <= 0 || s0.history.filter((e) => e.id === 'collector_defense_drop').length >= 2) {
-        window.__game.input('interact', true);
-        window.__game.stepSimulation(250);
-        window.__game.input('interact', false);
-        window.__game.stepSimulation(80);
-        return { acted: 'interact' };
-      }
-      if (sc.retryLocked) { window.__game.stepSimulation(300); return { acted: 'lockwait' }; }
-      const target = Number(sc.safeX ?? 0);
-      const x = Number(s0.player?.x ?? 0);
-      const d = target - x;
-      if (Math.abs(d) > 0.15) {
-        const a = d < 0 ? 'left' : 'right';
-        window.__game.input(a, true);
-        window.__game.stepSimulation(120);
-        window.__game.input(a, false);
-        window.__game.stepSimulation(40);
-        return { acted: 'move' };
-      }
-      window.__game.stepSimulation(250);
-      return { acted: 'hold' };
-    });
-    if (r.done) return;
-  }
-  throw new Error('collector 300 轮未完成');
-}
-
-async function probeCollectorAgency() {
-  const page = await browser.newPage();
+async function run() {
+  let server, browser;
   try {
+    execSync('npm run build', { cwd: WEB, stdio: 'pipe' }); pass('BUILD_CLEAN');
+    server = await startServer(); browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }); const errors = [];
+    page.on('pageerror', (e) => errors.push(`pageerror ${e}`)); page.on('console', (m) => { if (m.type() === 'error') errors.push(`console ${m.text()}`); }); page.on('requestfailed', (r) => errors.push(`request ${r.url()} ${r.failure()?.errorText}`));
+    let releaseModels;
+    const modelsAllowed = new Promise((resolve) => { releaseModels = resolve; });
+    await page.route('**/*.glb', async (route) => { await modelsAllowed; await route.continue(); });
     await page.goto(`http://127.0.0.1:${PORT}/?test=1`);
+    let s = await snap(page); eq(s.phase, 'INTRO', '整体开始页不应提前开始关卡'); assert(s.scene === null, '整体开始页不应建立 3D 关卡');
+    await page.locator('#btn-game-start').waitFor({ state: 'visible' }); await page.screenshot({ path: path.join(OUT, '00-game-start.png') });
+    await page.locator('#btn-game-start').click(); s = await snap(page); eq(s.phase, 'INTRO', '章节页不应提前开始关卡'); assert(s.scene === null, '章节页不应建立 3D 关卡');
     await page.locator('#btn-start').click();
-    await clickThroughOpening(page);
-    await driveGarden(page);
-    let snap = await page.evaluate(() => window.__game.snapshot());
-    assertEq(snap.beat, 'collector', '主动性探针未进入收集者');
-    const initialDefense = snap.scene?.defense;
-    for (let i = 0; i < 8; i++) {
-      await page.evaluate(() => window.__game.stepSimulation(1000));
-    }
-    snap = await page.evaluate(() => window.__game.snapshot());
-    assertEq(snap.scene?.defense, initialDefense, '零输入仍降低了收集者防御');
-    assertOk(!snap.history.some((e) => e.id === 'collector_defense_drop'), '零输入触发了防御下降');
-    assertOk(snap.history.some((e) => e.id === 'collector_round_failed'), '零输入没有产生可观察失败');
-    assertEq(JSON.stringify(snap.scene?.controls), JSON.stringify(['left', 'right', 'jump', 'interact']), '战斗控制承诺不一致');
-    assertEq(snap.scene?.arenaCenter?.z, 0, '竞技场中心未统一');
-    assertEq(snap.scene?.playerZ, 5, '玩家不在统一竞技场坐标内');
-  } finally {
-    await page.close();
-  }
-}
+    s = await snap(page); eq(s.phase, 'TUTORIAL', '开始阶段');
+    assert(!s.scene.character.fallbackVisible, '模型加载过程中不应显示胶囊占位角色');
+    assert(await page.locator('[data-story="chapter-intro"]').isVisible(), '角色加载时章节遮罩应继续显示');
+    eq(await page.locator('#btn-start').textContent(), '角色载入中…', '加载提示缺失');
+    releaseModels();
+    await step(page, 1000);
+    await page.waitForFunction(() => {
+      const scene = window.__game?.snapshot?.().scene;
+      return scene && (scene.ghostAssetLoaded || scene.ghostAssetFailed) && (scene.character?.assetLoaded || scene.character?.assetFailed);
+    }, null, { timeout: 30000 });
+    await step(page, 50);
+    s = await snap(page);
+    assert(s.scene.ghostAssetLoaded && !s.scene.ghostAssetFailed, 'Ghost GLB 加载失败');
+    assert(s.scene.character.assetLoaded && !s.scene.character.assetFailed, '林澈正式模型加载失败');
+    assert(!s.scene.character.fallbackVisible, '正式模型加载后仍显示占位角色');
+    assert(s.scene.character.skinnedMeshCount >= 1 && s.scene.character.boneCount >= 15, `角色绑骨异常：${JSON.stringify(s.scene.character)}`);
+    assert(s.scene.character.modelBoxHeight > 1.5 && s.scene.character.modelBoxHeight < 2.2, `角色比例异常：${s.scene.character.modelBoxHeight}`);
+    assert(s.scene.ghostToCharacterRatio >= .55 && s.scene.ghostToCharacterRatio <= .60, `Ghost/林澈比例异常：${s.scene.ghostToCharacterRatio}`);
+    assert(await page.locator('[data-story="chapter-intro"]').count() === 0, '正式角色加载完成后章节遮罩没有关闭');
+    const characterSource = fs.readFileSync(path.join(WEB, 'src', 'game', 'character-visual.js'), 'utf8');
+    assert(characterSource.includes('this.fallback.visible = false') && characterSource.includes('this.fallback.visible = true'), '备用角色必须仅在加载失败后显示');
+    assert(s.scene.character.triangleCount <= 80000 && s.scene.character.drawCalls <= 20, '角色复杂度超出网页预算');
+    assert(s.scene.character.animatedBones.length >= 10 && s.scene.character.animatedBones.includes('leftUpLeg') && s.scene.character.animatedBones.includes('rightUpLeg'), '全身动作没有控制腿部与骨盆');
+    eq(s.scene.character.semanticActions, ['idle', 'run', 'jump', 'fall', 'land', 'interact'], '角色动作集合不完整');
+    pass('FORMAL_CHARACTER', `${Math.round(s.scene.character.triangleCount)} triangles / ${s.scene.character.boneCount} bones`);
+    await step(page, 400); // 加载回调发生在两次模拟步进之间，先渲染一帧再截图，避免拍到占位角色
+    await page.screenshot({ path: path.join(OUT, '01-home.png') });
+    await step(page, 8000); eq((await snap(page)).phase, 'TUTORIAL', '零输入不得推进'); pass('ZERO_INPUT');
 
-async function driveDinner(page) {
-  for (let i = 0; i < 3; i++) {
-    await page.locator('[data-action="dinner-cycle"]').click();
-    await sleep(60);
-  }
-  await page.locator('[data-action="reveal"]').click();
-  await page.locator('[data-action="to-pollution"]').click();
-}
+    // 屏幕方向与人物正面回归：四方向都必须朝实际位移方向，不能左右键却面向前后。
+    {
+      const x0 = (await snap(page)).scene.player.x;
+      await press(page, 'right', 350);
+      const x1 = (await snap(page)).scene.player.x;
+      assert(x1 < x0 - .15, `按 D 应向屏幕右（世界 -X）移动：${x0.toFixed(2)} -> ${x1.toFixed(2)}`);
+      let character = (await snap(page)).scene.character;
+      assert(character.facingDirection.x < -.96 && character.facingErrorDegrees < 12, `D 朝向错误：${JSON.stringify(character.facingDirection)} / ${character.facingErrorDegrees}`);
+      await press(page, 'left', 420);
+      const x2 = (await snap(page)).scene.player.x;
+      assert(x2 > x1 + .15, `按 A 应向屏幕左（世界 +X）移动：${x1.toFixed(2)} -> ${x2.toFixed(2)}`);
+      character = (await snap(page)).scene.character;
+      assert(character.facingDirection.x > .96 && character.facingErrorDegrees < 12, `A 朝向错误：${JSON.stringify(character.facingDirection)} / ${character.facingErrorDegrees}`);
+      await press(page, 'forward', 350); character = (await snap(page)).scene.character;
+      assert(character.facingDirection.z > .96 && character.facingErrorDegrees < 12, `W 朝向错误：${JSON.stringify(character.facingDirection)} / ${character.facingErrorDegrees}`);
+      await press(page, 'back', 420); character = (await snap(page)).scene.character;
+      assert(character.facingDirection.z < -.96 && character.facingErrorDegrees < 12, `S 朝向错误：${JSON.stringify(character.facingDirection)} / ${character.facingErrorDegrees}`);
+      pass('FOUR_DIRECTION_FACING', `max error ${character.facingErrorDegrees.toFixed(2)}°`);
 
-async function drivePollution(page) {
-  for (let i = 0; i < 400; i++) {
-    const s = await page.evaluate(() => window.__game.snapshot());
-    if (s.beat !== 'pollution') return s.beat;
-    const windowOpen = s.pollutionWindow?.open;
-    const resisted = s.pollutionWindow?.resisted;
-    const exitOpened = s.history.some((e) => e.id === 'pollution_exit_opened');
-    if ((windowOpen && !resisted) || (s.pollutionStep === 5 && s.pollutionReadyToExit && !exitOpened)) {
-      await page.evaluate(() => {
-        window.__game.input('interact', true);
-        window.__game.stepSimulation(120);
-        window.__game.input('interact', false);
-        window.__game.stepSimulation(80);
+      const gaitSamples = await page.evaluate(() => {
+        window.__game.input('forward', true);
+        const samples = {};
+        for (let i = 0; i < 160; i++) {
+          window.__game.stepSimulation(25);
+          const c = window.__game.snapshot().scene.character;
+          const sin = Math.sin(c.gaitPhase); const cos = Math.cos(c.gaitPhase);
+          if (!samples.kneeLeft && cos > .88 && c.motionStrength > .9) samples.kneeLeft = c;
+          if (!samples.kneeRight && cos < -.88 && c.motionStrength > .9) samples.kneeRight = c;
+          if (!samples.elbowLeft && sin > .88 && c.motionStrength > .9) samples.elbowLeft = c;
+          if (!samples.elbowRight && sin < -.88 && c.motionStrength > .9) samples.elbowRight = c;
+          if (Object.keys(samples).length === 4) break;
+        }
+        return samples;
       });
-      continue;
-    }
-    await page.evaluate(() => window.__game.stepSimulation(400));
-  }
-  return 'timeout';
-}
-
-async function submitAtStatement(page, text, ids) {
-  const res = await page.evaluate(([t, e]) => window.__game.submitJudgment(t, e), [text, ids]);
-  if (!res.ok) return res;
-  await page.waitForFunction(
-    () => window.__game?.snapshot?.().feedback !== null,
-    null, { timeout: 20000 }
-  );
-  return res;
-}
-
-async function finishToEnd(page) {
-  await page.locator('[data-action="feedback-continue"]').click();
-  // 尾声：逐行点继续，最后结束；必须到达 closed
-  for (let i = 0; i < 14; i++) {
-    const s = await page.evaluate(() => window.__game.snapshot());
-    if (s.beat === 'closed') return;
-    const btn = page.locator('[data-action="epilogue-next"], [data-action="case-close"]').last();
-    if ((await btn.count()) === 0) throw new Error(`尾声无按钮: ${s.beat} / ${JSON.stringify(s.history.slice(-3))}`);
-    await btn.click();
-    await sleep(80);
-  }
-  const s = await page.evaluate(() => window.__game.snapshot());
-  throw new Error(`尾声 14 轮未到 closed: ${s.beat} / ${JSON.stringify(s.history.slice(-4))}`);
-}
-
-async function fullFlow(page, statementText, ids, query = 'test=1') {
-  await page.goto(`http://127.0.0.1:${PORT}/?${query}`);
-  await page.locator('#btn-start').click();
-  await clickThroughOpening(page);
-  await driveGarden(page);
-  await driveCollector(page);
-  await driveDinner(page);
-  await drivePollution(page);
-  await submitAtStatement(page, statementText, ids);
-  await finishToEnd(page);
-  return page.evaluate(() => window.__game.snapshot());
-}
-
-// ── 各项检查 ──
-const results = {};
-const detail = {};
-
-async function h01() {
-  const res = await get(`http://127.0.0.1:${PORT}/`);
-  assertEq(res.status, 200, '首页状态码');
-  assertOk(res.body.includes('data-app="ghost-inside"'), '缺少 data-app 标记');
-  const assets = [...res.body.matchAll(/assets\/[^"]+/g)].map((m) => m[0]);
-  assertOk(assets.length > 0, '无本地资源引用');
-  for (const a of assets) {
-    const r = await get(`http://127.0.0.1:${PORT}/${a}`);
-    assertEq(r.status, 200, `资源 ${a}`);
-  }
-  const stat = await startStaticServer('/ghost');
-  try {
-    const sub = await get(`http://127.0.0.1:${stat.port}/ghost/`);
-    assertEq(sub.status, 200, '子路径首页');
-    for (const a of assets) {
-      const r = await get(`http://127.0.0.1:${stat.port}/ghost/${a}`);
-      assertEq(r.status, 200, `子路径资源 ${a}`);
-    }
-    const missing = await get(`http://127.0.0.1:${stat.port}/ghost/nope.js`);
-    assertEq(missing.status, 404, 'SPA 回退掩盖 404');
-  } finally { stat.srv.close(); }
-  return { assets: assets.length };
-}
-
-async function h02() {
-  // (a) 普通页面：真实点击 + 真实键盘
-  const ctxA = await browser.newContext();
-  const pa = await ctxA.newPage();
-  const errs = [];
-  pa.on('pageerror', (e) => errs.push(String(e)));
-  await pa.goto(`http://127.0.0.1:${PORT}/`);
-  await pa.locator('#btn-start').click();
-  await clickThroughOpening(pa);
-  await sleep(400);
-  const readTel = () => pa.locator('#telemetry').evaluate((el) => ({
-    beat: el.dataset.beat, x: parseFloat(el.dataset.x), y: parseFloat(el.dataset.y), z: parseFloat(el.dataset.z)
-  }));
-  await pa.keyboard.down('ArrowRight');
-  await pa.waitForTimeout(700);
-  const t1 = await readTel();
-  await pa.keyboard.up('ArrowRight');
-  // 花园相机沿 +Z 前视：屏幕右 = 世界 -X（输入已按屏幕方向校正）
-  assertOk(t1.x < -0.5, `真实右键未移动: x=${t1.x}`);
-  await pa.keyboard.down('Space');
-  await pa.waitForTimeout(280);
-  const t2 = await readTel();
-  await pa.keyboard.up('Space');
-  assertOk(t2.y > 1.2, `空格未离地: y=${t2.y}`);
-  await pa.waitForTimeout(700);
-  const t3 = await readTel();
-  assertOk(Math.abs(t3.y - 1) < 0.05, '未落地');
-  // 失焦清空按键：按住右键后 blur，x 不应继续增加
-  await pa.keyboard.down('ArrowRight');
-  const xBefore = (await readTel()).x;
-  await ctxA.pages()[0].evaluate(() => window.dispatchEvent(new Event('blur')));
-  await pa.waitForTimeout(500);
-  const xAfter = (await readTel()).x;
-  await pa.keyboard.up('ArrowRight');
-  assertOk(Math.abs(xAfter - xBefore) < 1.2, `失焦后按键未清空: ${xBefore}→${xAfter}`);
-  assertOk(errs.length === 0, `页面错误: ${errs[0]}`);
-  await ctxA.close();
-
-  // (b) 表态真实 DOM：空白 / 61 字 / 60 字（测试页快进到表态点）
-  const ctxB = await browser.newContext();
-  const pb = await ctxB.newPage();
-  await pb.goto(`http://127.0.0.1:${PORT}/?test=1`);
-  await pb.locator('#btn-start').click();
-  await clickThroughOpening(pb);
-  await driveGarden(pb);
-  await driveCollector(pb);
-  await driveDinner(pb);
-  await drivePollution(pb);
-  const input = pb.locator('[data-story="statement-input"]');
-  const submitBtn = pb.locator('[data-action="statement-submit"]');
-  await submitBtn.click();
-  await assertToast(pb, '请输入 1–60 字');
-  await input.fill('字'.repeat(61));
-  await submitBtn.click();
-  await assertToast(pb, '请输入 1–60 字');
-  await input.fill('谢'.repeat(60));
-  await pb.locator('.chip[data-card-id="R01"]').click();
-  await submitBtn.click();
-  await pb.waitForFunction(() => document.querySelector('[data-story="feedback"]'), null, { timeout: 20000 });
-  // 中文组合输入：compositionstart/update/end + input 事件不导致提交或崩溃
-  await pb.evaluate(() => {
-    const ta = document.querySelector('[data-story="statement-input"]');
-    ta.dispatchEvent(new CompositionEvent('compositionstart', { data: '不' }));
-    ta.dispatchEvent(new CompositionEvent('compositionupdate', { data: '不知道' }));
-    ta.dispatchEvent(new CompositionEvent('compositionend', { data: '不知道' }));
-  });
-  await ctxB.close();
-  return { keyboard: true, statementDom: true };
-}
-
-async function assertToast(page, text) {
-  const toast = await page.locator('[data-story="statement-error"]').textContent();
-  assertOk(toast.includes(text), `提示不符: ${toast}`);
-}
-
-async function h03() {
-  const snap = await fullFlow(browser.newPage(), '感谢家人的付出，不等于把以后所有选择都交出去。', ['F02', 'B01'])
-    .finally((p) => p);
-  const ctxPage = snap; void ctxPage;
-  return snap;
-}
-
-async function h04(pageErrors, consoleErrors, failedRequests) {
-  assertEq(pageErrors.length, 0, `pageerror: ${pageErrors[0]}`);
-  assertEq(consoleErrors.length, 0, `console.error: ${consoleErrors[0]}`);
-  assertEq(failedRequests.length, 0, `资源失败: ${failedRequests[0]}`);
-  return { clean: true };
-}
-
-async function h05() {
-  const { h05CaseContract } = await import('./checks/data.mjs');
-  return h05CaseContract();
-}
-async function h07() {
-  const { h07CopyLint } = await import('./checks/data.mjs');
-  return h07CopyLint();
-}
-async function h08() {
-  const { h08BeatBudget } = await import('./checks/data.mjs');
-  return h08BeatBudget();
-}
-
-async function h06() {
-  // 未知/锁定证据在真实 UI 被拒绝；三种合法判定经 mock provider 均可达结尾
-  const url = `http://127.0.0.1:${mockPort}/pick`;
-  for (const marker of ['ACCEPT', 'REVISE', 'HOLD']) {
-    const page = await browser.newPage();
-    const snap = await fullFlow(page, `${marker} ${marker} 一句判断`, ['F02', 'B01'], `test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/pick`)}`);
-    assertEq(snap.beat, 'closed', `${marker} 未到结尾`);
-    assertEq(snap.feedback.verdict, marker.toLowerCase(), `${marker} 判定不符`);
-    // provider 不得改变世界数据：除已解锁卡外数量不变
-    assertOk(snap.unlockedCards.length >= 8, '解锁卡数量异常');
-    await page.close();
-  }
-  // 边界负例（状态机层）
-  const page = await browser.newPage();
-  await page.goto(`http://127.0.0.1:${PORT}/?test=1`);
-  await page.locator('#btn-start').click();
-  await clickThroughOpening(page);
-  const wrongBeat = await page.evaluate(() => window.__game.submitJudgment('测试', ['F02']));
-  assertEq(wrongBeat.ok, false, '非表态点居然可提交');
-  await page.evaluate(() => window.__game.stepSimulation(1000));
-  const badIds = await page.evaluate(() => window.__game.submitJudgment('测试', ['NOPE']));
-  assertEq(badIds.ok, false, '未知证据未被拒'); // 在 garden 拍上 reason=wrong_beat；unknown/locked 证据拒绝由 validate 层在表态时覆盖
-  await page.close();
-  return { threeVerdicts: true };
-}
-
-async function h09() {
-  const page = await browser.newPage();
-  const external = [];
-  page.on('request', (r) => { if (!r.url().startsWith('http://127.0.0.1')) external.push(r.url()); });
-  const snap = await fullFlow(page, '一句判断 HOLD', ['F02', 'B01']);
-  assertEq(snap.beat, 'closed', '未到结尾');
-  assertEq(snap.feedback.source, 'unconfigured', '来源应为 unconfigured');
-  const expect = JSON.parse(fs.readFileSync(path.join(ROOT, 'game/data/cases/case_001_optimal_life.json'), 'utf8'));
-  assertEq(snap.feedback.response, expect.fallbacks.hold.response, '回退文本与 JSON 不一致');
-  await page.close();
-  return { externalRequests: external.length };
-}
-
-async function h10() {
-  const page = await browser.newPage();
-  await page.goto(`http://127.0.0.1:${PORT}/?test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/hang`)}`);
-  await page.locator('#btn-start').click();
-  await clickThroughOpening(page);
-  await driveGarden(page);
-  await driveCollector(page);
-  await driveDinner(page);
-  await drivePollution(page);
-  const t0 = Date.now();
-  const res = await page.evaluate(([t, e]) => window.__game.submitJudgment(t, e), ['一句判断', ['R01']]);
-  assertOk(res.ok, '提交失败');
-  await page.waitForFunction(() => window.__game?.snapshot?.().feedback !== null, null, { timeout: 15000 });
-  const elapsed = (Date.now() - t0) / 1000;
-  const snap = await page.evaluate(() => window.__game.snapshot());
-  assertOk(elapsed >= 7.5 && elapsed <= 10.5, `超时耗时异常: ${elapsed}s`);
-  assertEq(snap.feedback.source, 'timeout', '来源应为 timeout');
-  const expect = JSON.parse(fs.readFileSync(path.join(ROOT, 'game/data/cases/case_001_optimal_life.json'), 'utf8'));
-  assertEq(snap.feedback.response, expect.fallbacks.timeout.response, 'timeout 回退文本不符');
-  await finishToEnd(page);
-  const done = await page.evaluate(() => window.__game.snapshot());
-  assertEq(done.beat, 'closed', '超时后未到结尾');
-  await page.close();
-  // header 已发但 body 不结束 → 同样走 timeout 回退
-  const page2 = await browser.newPage();
-  await page2.goto(`http://127.0.0.1:${PORT}/?test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/hang-body`)}`);
-  await page2.locator('#btn-start').click();
-  await clickThroughOpening(page2);
-  await driveGarden(page2);
-  await driveCollector(page2);
-  await driveDinner(page2);
-  await drivePollution(page2);
-  await page2.evaluate(([t, e]) => window.__game.submitJudgment(t, e), ['一句判断', ['R01']]);
-  await page2.waitForFunction(() => window.__game?.snapshot?.().feedback !== null, null, { timeout: 15000 });
-  const snap2 = await page2.evaluate(() => window.__game.snapshot());
-  assertEq(snap2.feedback.source, 'timeout', 'hang-body 未走 timeout');
-  await page2.close();
-  return { elapsed };
-}
-
-async function h11() {
-  const faults = ['invalid-json', 'not-object', 'missing-field', 'unknown-template', 'reject-verdict',
-    'no-evidence', 'unknown-evidence', 'locked-evidence', 'dup-evidence', 'extra-field', 'huge', 'http500'];
-  const expect = JSON.parse(fs.readFileSync(path.join(ROOT, 'game/data/cases/case_001_optimal_life.json'), 'utf8'));
-  for (const f of faults) {
-    const page = await browser.newPage();
-    await page.goto(`http://127.0.0.1:${PORT}/?test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/${f}`)}`);
-    await page.locator('#btn-start').click();
-    await clickThroughOpening(page);
-    await driveGarden(page);
-    await driveCollector(page);
-    await driveDinner(page);
-    await drivePollution(page);
-    const res = await page.evaluate(([t, e]) => window.__game.submitJudgment(t, e), ['一句判断', ['R01']]);
-    assertOk(res.ok, `${f}: 提交被拒`);
-    await page.waitForFunction(() => window.__game?.snapshot?.().feedback !== null, null, { timeout: 20000 });
-    const snap = await page.evaluate(() => window.__game.snapshot());
-    assertEq(snap.feedback.source, 'invalid_or_unavailable', `${f}: 来源不符`);
-    assertEq(snap.feedback.response, expect.fallbacks.hold.response, `${f}: 回退文本不符`);
-    await finishToEnd(page);
-    const done = await page.evaluate(() => window.__game.snapshot());
-    assertEq(done.beat, 'closed', `${f}: 未到结尾`);
-    await page.close();
-  }
-  return { faults: faults.length };
-}
-
-async function h12() {
-  // 断网后表态仍可完成
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  await page.goto(`http://127.0.0.1:${PORT}/?test=1&provider=${encodeURIComponent(`http://127.0.0.1:${mockPort}/hang`)}`);
-  await page.locator('#btn-start').click();
-  await clickThroughOpening(page);
-  await driveGarden(page);
-  await driveCollector(page);
-  await driveDinner(page);
-  await ctx.setOffline(true);
-  await drivePollution(page);
-  await submitAtStatement(page, '一句判断', ['R01']);
-  await finishToEnd(page);
-  const snap = await page.evaluate(() => window.__game.snapshot());
-  assertEq(snap.beat, 'closed', '断网后未到结尾');
-  await ctx.close();
-  return { offline: true };
-}
-
-async function h13() {
-  const times = [];
-  for (let i = 0; i < 3; i++) {
-    const ctx = await browser.newContext();
-    const page = await ctx.newPage();
-    const t0 = Date.now();
-    await page.goto(`http://127.0.0.1:${PORT}/`);
-    await page.locator('#btn-start').waitFor({ state: 'visible', timeout: 8000 });
-    await page.locator('#btn-start').click();
-    await page.waitForFunction(() => document.querySelector('[data-action="opening-next"]'), null, { timeout: 5000 });
-    times.push((Date.now() - t0) / 1000);
-    await ctx.close();
-  }
-  const max = Math.max(...times);
-  assertOk(max < 5, `可交互时间 ${max}s ≥ 5s`);
-  return { max };
-}
-
-async function h14() {
-  const page = await browser.newPage();
-  await page.goto(`http://127.0.0.1:${PORT}/?test=1`);
-  await page.locator('#btn-start').click();
-  await clickThroughOpening(page);
-  // 花园：真实时钟采样 120 帧（不加速）
-  await sample(page, 'garden');
-  await driveGarden(page);
-  await driveCollectorWait(page);
-  // 收集者：真实时钟采样 120 帧
-  await sample(page, 'collector');
-  await page.close();
-  return { sampled: 240 };
-}
-
-async function driveCollectorWait(page) {
-  for (let i = 0; i < 200; i++) {
-    const s = await page.evaluate(() => window.__game.snapshot());
-    if (s.beat === 'collector') return;
-    if (s.beat === 'garden') {
-      await page.evaluate(() => window.__game.stepSimulation(500));
-      continue;
-    }
-    return;
-  }
-}
-
-async function sample(page, phase) {
-  const samples = [];
-  for (let i = 0; i < 130; i++) {
-    const st = await page.evaluate(() => {
-      const s = window.__game.snapshot();
-      return { calls: s.stats.calls, tri: s.stats.triangles, beat: s.beat, hasPlayer: s.hasPlayer };
-    });
-    if (st.beat === phase) samples.push(st);
-    await sleep(20);
-  }
-  assertOk(samples.length >= 120, `${phase} 采样不足: ${samples.length}`);
-  for (const s of samples) {
-    assertOk(s.calls > 0 && s.calls <= 100, `${phase} draw calls 超限: ${s.calls}`);
-    assertOk(s.tri > 0 && s.tri <= 150000, `${phase} 三角形超限: ${s.tri}`);
-    assertOk(s.hasPlayer, `${phase} 关键对象缺失`);
-  }
-}
-
-async function h15() {
-  const files = [
-    'game/web/src/main.js', 'game/data/cases/case_001_optimal_life.json',
-    'game/web/package-lock.json', 'game/web/README.md', 'DEMO_CHECKLIST.md',
-    '.astra/harness/check.mjs', '.astra/harness/check.sh', 'ask_astra.sh',
-    'game/web/src/assets/scenes/start.png',
-    'game/web/src/assets/scenes/garden.png',
-    'game/web/src/assets/scenes/collector.png',
-    'game/web/src/assets/scenes/dinner.png',
-    'game/web/src/assets/scenes/pollution.png',
-    'game/web/src/assets/scenes/epilogue.png'
-  ];
-  for (const f of files) {
-    assertOk(fs.existsSync(path.join(ROOT, f)), `缺少交付物 ${f}`);
-    if (f.endsWith('.png')) assertOk(fs.statSync(path.join(ROOT, f)).size > 100000, `场景图无效 ${f}`);
-  }
-  const readme = fs.readFileSync(path.join(ROOT, 'game/web/README.md'), 'utf8');
-  for (const cmd of ['npm install', 'npm start', 'npm run build', 'bash ./ask_astra.sh check', 'VITE_GHOST_PROVIDER_URL']) {
-    assertOk(readme.includes(cmd), `README 缺少 ${cmd}`);
-  }
-  const checklist = fs.readFileSync(path.join(ROOT, 'DEMO_CHECKLIST.md'), 'utf8');
-  for (const kw of ['生活切片', '完美花园', '饭桌', '污染', '表态', '我不知道', '心流', '共鸣', '掌声延迟', '静音呼吸', '台词的人味']) {
-    assertOk(checklist.includes(kw), `走查表缺少 ${kw}`);
-  }
-  return { files: files.length };
-}
-
-async function h16() {
-  const fake = 'FAKEKEY_8f2c1e';
-  execSync('npm run build', {
-    cwd: WEB,
-    env: { ...process.env, VITE_GHOST_PROVIDER_URL: 'https://gateway.example/ghost', VITE_GHOST_FAKE_KEY: fake },
-    stdio: 'pipe'
-  });
-  // 扫 dist 全部文本产物：假 key 不得出现
-  let scanned = 0;
-  const walk = (dir) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else {
-        scanned += 1;
-        const text = fs.readFileSync(p, 'utf8');
-        assertOk(!text.includes(fake), `假 key 泄漏于 ${path.basename(p)}`);
-      }
-    }
-  };
-  walk(path.join(WEB, 'dist'));
-  const srcText = fs.readFileSync(path.join(WEB, 'src', 'main.js'), 'utf8');
-  assertOk(!/VITE_[A-Z_]*KEY/.test(srcText.replace('VITE_GHOST_PROVIDER_URL', '')), '前端引用了 VITE_*KEY');
-  // 恢复干净构建并复验
-  execSync('npm run build', { cwd: WEB, stdio: 'pipe' });
-  const res = await get(`http://127.0.0.1:${PORT}/`);
-  assertEq(res.status, 200, '干净重建后首页不可用');
-  return { distFiles: scanned };
-}
-
-function assertEq(a, b, msg) {
-  if (a !== b) throw new Error(`${msg || 'assertEq'}: 实际 ${JSON.stringify(a)} 期望 ${JSON.stringify(b)}`);
-}
-function assertOk(v, msg) {
-  if (!v) throw new Error(msg || 'assertOk 失败');
-}
-
-// ── 主流程 ──
-async function main() {
-  const only = process.argv.filter((a) => a.startsWith('--only=')).map((a) => a.split('=')[1]);
-  const active = only.length ? CHECKS.filter((c) => only.includes(c)) : CHECKS;
-  for (const id of only ?? []) {
-    if (!CHECKS.includes(id)) {
-      console.log(`[FAIL] UNKNOWN_ONLY_${id}`);
-      process.exit(1);
-    }
-  }
-  void only;
-
-  const lines = [];
-  const report = { startedAt: new Date().toISOString(), runId: RUN_ID, detail: {} };
-  server = await startServer();
-  browser = await chromium.launch();
-
-  try {
-    if (active.includes('H01_BUILD_HTTP')) {
-      try { report.detail.H01 = await h01(); lines.push(['H01_BUILD_HTTP', true]); }
-      catch (e) { report.detail.H01 = { error: String(e) }; lines.push(['H01_BUILD_HTTP', false, e]); }
-    }
-    if (active.includes('H05_CASE_CONTRACT')) await runCheck(lines, report, 'H05_CASE_CONTRACT', h05);
-    if (active.includes('H07_COPY_LINT')) await runCheck(lines, report, 'H07_COPY_LINT', h07);
-    if (active.includes('H08_BEAT_BUDGET')) await runCheck(lines, report, 'H08_BEAT_BUDGET', h08);
-    if (active.includes('H15_DELIVERABLES')) await runCheck(lines, report, 'H15_DELIVERABLES', h15);
-
-    if (active.some((c) => ['H02_NORMAL_INPUT', 'H03_ORDERED_FLOW', 'H04_CLEAN_SMOKE', 'H06_EVIDENCE_BOUNDARY', 'H09_NO_KEY', 'H10_PROVIDER_TIMEOUT', 'H11_PROVIDER_INVALID', 'H12_OFFLINE', 'H13_INTERACTIVE_TIME', 'H14_RENDER_BUDGET'].includes(c))) {
-      mock = await startMock();
-      mockPort = mock.port;
+      character = gaitSamples.kneeLeft;
+      assert(character && gaitSamples.kneeRight && gaitSamples.elbowLeft && gaitSamples.elbowRight, `未采集到完整步态周期：${Object.keys(gaitSamples)}`);
+      const motion = character.boneMotion;
+      assert(character.motionStrength > .9, `起跑动作强度不足：${character.motionStrength}`);
+      assert(Math.max(motion.leftUpLeg, motion.rightUpLeg) > .12, `大腿没有形成步幅：${JSON.stringify(motion)}`);
+      assert(gaitSamples.kneeLeft.gaitPose.kneeL > gaitSamples.kneeLeft.gaitPose.kneeR + .55, `左摆动腿没有明显屈膝：${JSON.stringify(gaitSamples.kneeLeft.gaitPose)}`);
+      assert(gaitSamples.kneeRight.gaitPose.kneeR > gaitSamples.kneeRight.gaitPose.kneeL + .55, `右摆动腿没有明显屈膝：${JSON.stringify(gaitSamples.kneeRight.gaitPose)}`);
+      assert(Math.max(motion.leftFoot, motion.rightFoot) > .035, `脚掌没有抬落：${JSON.stringify(motion)}`);
+      assert(gaitSamples.elbowLeft.gaitPose.elbowL > gaitSamples.elbowLeft.gaitPose.elbowR + .12, `左肘没有随手臂后摆弯曲：${JSON.stringify(gaitSamples.elbowLeft.gaitPose)}`);
+      assert(gaitSamples.elbowRight.gaitPose.elbowR > gaitSamples.elbowRight.gaitPose.elbowL + .12, `右肘没有随手臂后摆弯曲：${JSON.stringify(gaitSamples.elbowRight.gaitPose)}`);
+      assert(Math.max(gaitSamples.elbowLeft.boneMotion.leftForeArm, gaitSamples.elbowRight.boneMotion.rightForeArm) > .28, '前臂弯曲幅度不可见');
+      await page.evaluate(() => { window.__game.input('forward', false); window.__game.stepSimulation(700); });
+      character = (await snap(page)).scene.character;
+      assert(character.motionStrength < .03, `停止后动作没有平滑回正：${character.motionStrength}`);
+      pass('NATURAL_GAIT_COMPONENTS', 'alternating knees and elbows');
     }
 
-    // H03 + H04 合并一次完整流程（console/pageerror/资源失败监听）
-    if (active.includes('H03_ORDERED_FLOW') || active.includes('H04_CLEAN_SMOKE')) {
-      const ctx = await browser.newContext();
-      const page = await ctx.newPage();
-      const pageErrors = [], consoleErrors = [], failedRequests = [];
-      page.on('pageerror', (e) => pageErrors.push(String(e)));
-      page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
-      page.on('requestfailed', (r) => failedRequests.push(`${r.url()} ${r.failure()?.errorText}`));
-      try {
-        if (active.includes('H03_ORDERED_FLOW')) await probeCollectorAgency();
-        const snap = await fullFlow(page, '感谢家人的付出，不等于把以后所有选择都交出去。', ['F02', 'B01']);
-        // 顺序与关键事件
-        const beats = snap.history.filter((e) => e.id === 'beat_enter').map((e) => e.beat);
-        const expected = ['life_slice', 'garden', 'collector', 'dinner', 'pollution', 'statement', 'epilogue']; // closed 以 case_closed 事件单独断言
-        assertEq(JSON.stringify(beats), JSON.stringify(expected), `节拍顺序: ${beats}`);
-        const caseJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'game/data/cases/case_001_optimal_life.json'), 'utf8'));
-        const pollutionIds = caseJson.pollution.events.map((e) => e.id);
-        for (const ev of ['terminal_closed', 'collector_converted', 'dinner_cycle_1', 'dinner_cycle_2', 'dinner_cycle_3', 'dinner_reveal', ...pollutionIds, 'pollution_done', 'feedback_shown', 'case_closed']) {
-          assertOk(snap.history.some((e) => e.id === ev), `缺少事件 ${ev}`);
-        }
-        assertEq(snap.history.filter((e) => e.id === 'collector_defense_drop').length, 2, '收集者应恰好两轮降防');
-        assertOk(snap.history.some((e) => e.id === 'pollution_resist'), '污染阶段缺少主动抵抗');
-        assertOk(snap.history.some((e) => e.id === 'pollution_exit_opened'), '污染阶段未主动撕开出口');
-        assertEq(snap.beat, 'closed', '未到 closed');
-        if (active.includes('H03_ORDERED_FLOW')) lines.push(['H03_ORDERED_FLOW', true]);
-        if (active.includes('H04_CLEAN_SMOKE')) {
-          try {
-            await h04(pageErrors, consoleErrors, failedRequests);
-            lines.push(['H04_CLEAN_SMOKE', true]);
-          } catch (e) {
-            lines.push(['H04_CLEAN_SMOKE', false, e]);
-          }
-        }
-        report.detail.H03 = { beats };
-      } catch (e) {
-        if (active.includes('H03_ORDERED_FLOW')) lines.push(['H03_ORDERED_FLOW', false, e]);
-        if (active.includes('H04_CLEAN_SMOKE')) lines.push(['H04_CLEAN_SMOKE', false, new Error('H03 失败导致 H04 无从判定')]);
-        report.detail.H03 = { error: String(e) };
-      }
-      await ctx.close();
-    }
+    for (const id of ['bowl', 'fruit', 'water']) await interact(page, id);
+    eq((await snap(page)).phase, 'COLLECT_RESPONSIBILITIES', '教学未完成');
+    const expected = { phone: [1, .97, .96], medicine: [2, .93, .90], application: [3, .88, .81] };
+    for (const id of ['phone', 'medicine', 'application']) { await interact(page, id); s = await snap(page); const [count, run, jump] = expected[id]; eq([s.carriedResponsibilityCount, s.runMultiplier, s.jumpMultiplier], [count, run, jump], `${id} 负重曲线`); }
+    eq((await snap(page)).scene.character.attachments.sort(), ['application', 'medicine', 'phone'], '责任物没有挂到林澈身上');
+    pass('WEIGHT_CURVE'); await page.screenshot({ path: path.join(OUT, '02-full-load.png') });
+    // 小断层失败只重跑路线，不得误触发剧情大断层。
+    const beforeCourseFail = await snap(page);
+    await moveTo(page, 0, beforeCourseFail.scene.course.microGaps[0].startZ - .25, .12);
+    await page.evaluate(() => window.__game.input('forward', true)); await step(page, 900); await page.evaluate(() => window.__game.input('forward', false)); await step(page, 1200);
+    s = await snap(page); eq(s.phase, 'COLLECT_RESPONSIBILITIES', '小断层错误推进剧情'); eq(s.carriedResponsibilityCount, 3, '小断层失败后责任物丢失'); assert(s.scene.course.respawns >= 1, '小断层没有快速重生');
+    await traverseCourse(page); await moveTo(page, 0, (await snap(page)).scene.gap.startZ - .9, .2);
+    await page.screenshot({ path: path.join(OUT, '03-first-gap.png') }); const gap = (await snap(page)).scene.gap;
+    s = await attemptGap(page, 'MEMORY_HUB'); eq(s.scene.gap, gap, '第一次后断层被改变'); eq(s.carriedResponsibilityCount, 3, '失败后物品丢失');
 
-    if (active.includes('H02_NORMAL_INPUT')) await runCheck(lines, report, 'H02_NORMAL_INPUT', h02);
-    if (active.includes('H06_EVIDENCE_BOUNDARY')) await runCheck(lines, report, 'H06_EVIDENCE_BOUNDARY', h06);
-    if (active.includes('H09_NO_KEY')) await runCheck(lines, report, 'H09_NO_KEY', h09);
-    if (active.includes('H10_PROVIDER_TIMEOUT')) await runCheck(lines, report, 'H10_PROVIDER_TIMEOUT', h10);
-    if (active.includes('H11_PROVIDER_INVALID')) await runCheck(lines, report, 'H11_PROVIDER_INVALID', h11);
-    if (active.includes('H12_OFFLINE')) await runCheck(lines, report, 'H12_OFFLINE', h12);
-    if (active.includes('H13_INTERACTIVE_TIME')) await runCheck(lines, report, 'H13_INTERACTIVE_TIME', h13);
-    if (active.includes('H14_RENDER_BUDGET')) await runCheck(lines, report, 'H14_RENDER_BUDGET', h14);
-    if (active.includes('H16_SECRET_BOUNDARY')) await runCheck(lines, report, 'H16_SECRET_BOUNDARY', h16);
-  } finally {
-    await browser?.close();
-    server?.kill();
-    mock?.srv.close();
-  }
+    await interact(page, 'family_calendar'); s = await snap(page); eq(s.items.medicine.currentState, 'Shared', '药盒未共享'); await page.screenshot({ path: path.join(OUT, '04-memory-puzzle.png') });
+    await interact(page, 'brother_return'); await interact(page, 'father_return'); s = await snap(page); eq(s.items.phone.currentState, 'ReturnedPending', '手机应等待父亲最后一步');
+    await interact(page, 'father_hint'); s = await snap(page); eq([s.items.phone.currentState, s.items.application.currentState], ['Returned', 'Returned'], '归还状态错误');
+    eq([s.runMultiplier, s.jumpMultiplier, s.carriedResponsibilityCount], [1, 1, 0], '责任解除后未恢复'); eq(s.phase, 'RESPONSIBILITIES_RESOLVED', '三段记忆未完成');
+    eq(s.scene.character.attachments, [], '责任解除后身上仍有物件');
 
-  for (const l of lines) {
-    const [id, ok, err] = l;
-    if (ok) console.log(`[PASS] ${id}`);
-    else console.log(`[FAIL] ${id} :: ${err?.message ?? err ?? ''}`);
-    report.detail[id] = report.detail[id] ?? (ok ? { ok: true } : { ok: false, error: String(err?.message ?? err) });
-  }
-  report.finishedAt = new Date().toISOString();
-  fs.writeFileSync(path.join(REPORTS, 'harness.json'), JSON.stringify(report, null, 2));
-  fs.writeFileSync(path.join(REPORTS, 'server.log'), serverLog.join(''));
-  if (lines.some((l) => !l[1])) process.exit(1);
+    await traverseCourse(page); s = await attemptGap(page, 'TRANSFER_NOTICE_REVEAL'); eq(s.scene.gap, gap, '第二次后断层被改变'); assert(s.history.some((e) => e.type === 'gap_attempt_2_interrupted'), '第二次失败没有表现为通知中断');
+    await interact(page, 'notice'); await interact(page, 'discard'); s = await snap(page); eq(s.items.notice.currentState, 'Revealed', '通知被错误丢弃'); assert(s.history.some((e) => e.type === 'notice_discard_rejected'), '缺少丢弃拒绝');
+    await page.screenshot({ path: path.join(OUT, '05-notice-rejected.png') }); await interact(page, 'keep'); s = await snap(page); eq(s.items.notice.currentState, 'Kept', '通知未保留');
+
+    await traverseCourse(page); s = await attemptGap(page, 'FINAL_JUMP'); eq(s.scene.gap, gap, '最终跳后断层被改变'); assert(s.scene.finalGapCrossed, '最终未越过断层'); assert(s.scene.course.passes >= 3, '没有在三种责任状态下重复穿越跑酷路线'); await page.screenshot({ path: path.join(OUT, '06-final-landing.png') });
+    await page.evaluate(() => window.__game.input('forward', true)); await step(page, 1000); await step(page, 1000); await page.evaluate(() => window.__game.input('forward', false));
+    s = await snap(page); eq(s.phase, 'FINAL_JUMP', '未回复弟弟却提前结束'); assert(!s.scene.endingMessageRead && s.scene.player.z <= 77.26, '未回复时出口没有阻止误走');
+    await interact(page, 'brother_message'); s = await snap(page); assert(s.scene.endingMessageRead, '按 E 后没有回复弟弟'); eq(s.history.filter((e) => e.type === 'brother_message_replied').length, 1, '弟弟回复事件次数');
+    await page.screenshot({ path: path.join(OUT, '07-reply-sent.png') });
+    await moveTo(page, 0, 84); s = await snap(page); eq(s.phase, 'ENDING', '未进入结尾'); assert(s.closed, '结尾未关闭');
+    await page.locator('.gb-finish.visible').waitFor({ state: 'visible' }); await page.screenshot({ path: path.join(OUT, '08-level-complete.png') });
+    const sequence = s.history.map((e) => e.type);
+    for (const event of ['gap_attempt_1_failed', 'responsibilities_resolved', 'gap_attempt_2_interrupted', 'notice_discard_rejected', 'notice_kept', 'final_jump_landed', 'brother_message_replied', 'ending_message_sent']) eq(sequence.filter((v) => v === event).length, 1, `${event} 次数`);
+    assert(s.scene.character.actionHistory.includes('run') && s.scene.character.actionHistory.includes('jump') && s.scene.character.actionHistory.includes('land'), '实际游玩没有触发完整移动动作');
+    pass('PARKOUR_ROUTE_THREE_PASSES', `${s.scene.course.passes} passes / ${s.scene.course.respawns} retry`);
+    pass('OFFICIAL_INPUT_E2E'); pass('SAME_GAP_THREE_ATTEMPTS'); pass('ITEM_STATE_CONTRACT');
+    await Promise.all([page.waitForEvent('domcontentloaded'), page.locator('[data-action="restart"]').click()]);
+    await page.locator('#btn-game-start').waitFor({ state: 'visible' }); s = await snap(page);
+    eq(s.phase, 'INTRO', '重新开始后阶段未归零'); assert(s.scene === null && s.carriedResponsibilityCount === 0 && !s.closed, '重新开始后场景或物品未归零');
+    await page.locator('#btn-game-start').click(); await page.locator('#btn-start').click(); s = await snap(page); eq(s.phase, 'TUTORIAL', '重新开始后无法再次进入第一关'); pass('RESTART_FULL_RESET');
+    eq(errors, [], '浏览器错误'); pass('CLEAN_RUNTIME');
+    const shots = fs.readdirSync(OUT).filter((f) => f.endsWith('.png')); assert(shots.length >= 9, '截图数量不足'); pass('SCREENSHOTS_720P', shots.join(', '));
+  } catch (e) { fail('HARNESS', e); throw e; }
+  finally { await browser?.close(); server?.child?.kill(); fs.writeFileSync(path.join(REPORTS, 'harness.json'), JSON.stringify({ at: new Date().toISOString(), checks }, null, 2)); }
 }
 
-async function runCheck(lines, report, id, fn) {
-  try {
-    report.detail[id] = await fn();
-    lines.push([id, true]);
-  } catch (e) {
-    report.detail[id] = { ok: false, error: String(e?.message ?? e) };
-    lines.push([id, false, e]);
-  }
-}
-
-main().catch((e) => {
-  log(`harness fatal: ${e?.stack ?? e}`);
-  process.exit(2);
-});
+run().catch(() => process.exit(1));

@@ -16,6 +16,8 @@ export class Machine {
     this.conversionDone = false;
     this.terminalClosed = false;
     this.dinnerCycle = 0;
+    this.dinnerClues = new Set();
+    this.revealWrongGuesses = 0;
     this.revealDone = false;
     this.pollutionStep = 0;      // 0..5
     this.pollutionResists = new Set();
@@ -46,7 +48,7 @@ export class Machine {
     if (to === 'garden' && !this._openingRead()) return false;
     if (to === 'collector' && !this.terminalClosed) return false;
     if (to === 'dinner' && !this.conversionDone) return false;
-    if (to === 'pollution' && this.dinnerCycle < 3) return false;
+    if (to === 'pollution' && (this.dinnerCycle < 3 || !this.revealDone)) return false;
     if (to === 'statement' && (
       this.pollutionStep < 5
       || !this.pollutionReadyToExit
@@ -91,7 +93,6 @@ export class Machine {
     this.pollutionStep += 1;
     const ev = this.caseView.pollution.events[this.pollutionStep - 1];
     this.events.push(`pollution_${ev.kind}`, { id: ev.id });
-    if (ev.kind === 'only_a') this.unlock('B01');
     if (this.pollutionStep === 5) {
       this.events.push('pollution_done', {});
       this.unlock('E03');
@@ -134,6 +135,7 @@ export class Machine {
     this.pollutionResists.add(step);
     this.pollutionWindow = { ...this.pollutionWindow, resisted: true };
     this.events.push('pollution_resist', { step });
+    if (this.pollutionResists.size === 1) this.unlock('B01');
     if (this.pollutionStep >= 5) this.pollutionReadyToExit = true;
     this._emit();
     return true;
@@ -161,8 +163,29 @@ export class Machine {
     return true;
   }
 
-  recordReveal() {
+  recordDinnerClue(recordId) {
     if (this.beat !== 'dinner' || this.dinnerCycle < 3 || this.revealDone) return false;
+    const exists = this.caseView.reveal.records.some((r) => r.id === recordId);
+    if (!exists || this.dinnerClues.has(recordId)) return false;
+    this.dinnerClues.add(recordId);
+    this.events.push('dinner_clue_inspected', { record: recordId });
+    this._emit();
+    return true;
+  }
+
+  recordRevealGuess(editorId) {
+    if (this.beat !== 'dinner' || this.dinnerClues.size < 3 || this.revealDone) return false;
+    if (editorId !== 'lin_che') {
+      this.revealWrongGuesses += 1;
+      this.events.push('dinner_guess_wrong', { editor: editorId });
+      this._emit();
+      return false;
+    }
+    return this.recordReveal();
+  }
+
+  recordReveal() {
+    if (this.beat !== 'dinner' || this.dinnerCycle < 3 || this.dinnerClues.size < 3 || this.revealDone) return false;
     this.revealDone = true;
     this.events.push('dinner_reveal', {});
     this.unlock('R01');
@@ -220,6 +243,8 @@ export class Machine {
       terminalClosed: this.terminalClosed,
       conversionDone: this.conversionDone,
       dinnerCycle: this.dinnerCycle,
+      dinnerClues: [...this.dinnerClues],
+      revealWrongGuesses: this.revealWrongGuesses,
       revealDone: this.revealDone,
       pollutionStep: this.pollutionStep,
       pollutionResists: [...this.pollutionResists].sort((a, b) => a - b),

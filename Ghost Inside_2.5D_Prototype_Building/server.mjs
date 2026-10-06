@@ -203,7 +203,10 @@ export function createAppServer(options = {}) {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') throw new Error('This server requires Node.js 20 or newer.');
 
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
+    // 浏览器中途取消连接时，未监听的 'error' 事件会直接击穿进程；本地预览服务必须吞掉它。
+    request.on('error', () => {});
+    response.on('error', () => {});
     let url;
     try {
       url = new URL(request.url ?? '/', 'http://localhost');
@@ -244,6 +247,11 @@ export function createAppServer(options = {}) {
 
     await serveStatic(request, response, url.pathname);
   });
+  server.on('clientError', (error, socket) => {
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    else socket.destroy();
+  });
+  return server;
 }
 
 export function startServer(options = {}) {

@@ -108,6 +108,67 @@ textarea { width: 100%; min-height: 72px; background: rgba(53, 80, 122, 0.12);
 .record-table td.redacted { letter-spacing: 0.2em; color: var(--fault); }
 .record-table td.mine { color: var(--amber); }
 
+/* 饭桌：用三段可翻开的记忆取代 47 行报表。 */
+.memory-trail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 10px; }
+.memory-shard { min-height: 138px; margin: 0; padding: 14px; display: flex; flex-direction: column;
+  align-items: flex-start; justify-content: space-between; text-align: left; color: #9fb0c4;
+  background: linear-gradient(145deg, rgba(53,80,122,.22), rgba(10,14,20,.78));
+  border-color: rgba(111,211,232,.38); transform: translateY(calc(var(--memory-order) * 5px)); }
+.memory-shard:hover:not(:disabled) { background: rgba(111,211,232,.13); color: var(--text); }
+.memory-shard.open { border-color: var(--amber); color: var(--text); }
+.memory-shard strong { font-size: 14px; line-height: 1.55; font-weight: 500; }
+.memory-year { color: var(--cyan); font-size: 12px; letter-spacing: .12em; }
+.memory-hidden, .memory-editor { font-size: 12px; color: #7f92a8; }
+.editor-guess { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.editor-guess button { margin-top: 8px; padding-inline: 10px; }
+.editor-guess button.wrong { border-color: var(--fault); color: var(--fault); opacity: .45; text-decoration: line-through; }
+.editor-guess button.right { border-color: var(--amber); color: var(--amber); opacity: 1; }
+.insight-line { margin-top: 18px; padding: 13px 15px; border-left: 3px solid var(--amber);
+  background: rgba(217,160,91,.1); color: #f2d2a5; font-size: 17px; line-height: 1.7; }
+
+/* 污染：让玩家看见自己守住了什么。 */
+.carried-truth { margin: 8px 0 14px; padding: 10px 12px; border: 1px solid rgba(217,160,91,.5);
+  background: rgba(217,160,91,.08); color: #a9b5c5; font-size: 13px; line-height: 1.55; }
+.carried-truth strong { display: block; margin-top: 4px; color: var(--amber); font-size: 15px; }
+.memory-anchors { display: flex; flex-wrap: wrap; gap: 7px; min-height: 28px; margin-top: 10px; }
+.memory-anchors span { padding: 4px 9px; border: 1px solid rgba(111,211,232,.5); border-radius: 2px;
+  color: #b8e5ef; background: rgba(111,211,232,.08); font-size: 12px; animation: anchor-in .35s ease-out; }
+@keyframes anchor-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* 表态：选择自然语言含义，不暴露内部编号。 */
+.statement-card { width: min(94vw, 760px); max-width: 760px; max-height: 86vh; overflow-y: auto;
+  padding: 18px 24px; background: rgba(16,22,32,.87); }
+.statement-card > .line.ghost { margin: 5px 0 8px; font-size: 14px; line-height: 1.55; }
+.stance-lane { border: 0; padding: 0; margin: 8px 0; display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.stance-lane legend { grid-column: 1 / -1; padding: 0; margin-bottom: 2px; color: #c7d0dc; font-size: 15px; }
+.stance-choice { display: grid; width: 100%; margin: 3px 0; padding: 8px 12px; text-align: left;
+  border-color: rgba(53,80,122,.8); color: #aeb9c8; }
+.stance-choice strong { color: #d9e0ea; font-size: 14px; }
+.stance-choice span { display: none; margin-top: 4px; color: #7f92a8; font-size: 12px; line-height: 1.45; }
+.stance-choice.on { border-color: var(--amber); background: rgba(217,160,91,.1); }
+.stance-choice.on strong { color: var(--amber); }
+.stance-choice.on span { display: block; }
+.kept-boundary { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin: 14px 0; padding: 10px 12px; border-left: 3px solid var(--cyan); background: rgba(111,211,232,.07); }
+.kept-boundary span { font-size: 12px; color: #7f92a8; }
+.kept-boundary strong { color: var(--cyan); font-size: 14px; text-align: right; }
+.stance-preview { min-height: 52px; margin: 12px 0 0; padding: 12px 14px; border: 1px dashed #35507a;
+  color: #7f92a8; line-height: 1.65; }
+.stance-preview.ready { border-style: solid; border-color: var(--amber); color: #f0dbc0; background: rgba(217,160,91,.08); }
+.statement-card > [data-action="statement-submit"] { width: 100%; margin-top: 9px; }
+.character-feedback { border-left-color: var(--cyan); background: rgba(111,211,232,.07); }
+.feedback-speaker { margin-bottom: 9px; color: var(--cyan); font-size: 15px; }
+.feedback-response { color: var(--text); font-size: 18px; line-height: 1.7; }
+
+@media (max-width: 680px) {
+  .memory-trail, .editor-guess { grid-template-columns: 1fr; }
+  .memory-shard { min-height: 96px; transform: none; }
+  .stance-lane { grid-template-columns: 1fr; }
+  .kept-boundary { align-items: flex-start; flex-direction: column; }
+  .kept-boundary strong { text-align: left; }
+}
+
 #letterbox { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 #letterbox::before, #letterbox::after { content: ''; position: absolute; left: 0; right: 0;
   height: 0; background: var(--ink); transition: height 0.8s; }
@@ -134,3 +195,41 @@ textarea { width: 100%; min-height: 72px; background: rgba(53, 80, 122, 0.12);
 @media (prefers-reduced-motion: reduce) {
   #scene-backdrop.scene-backdrop-enter::before { animation: none; }
 }
+
+/* 《留一个位置》Greybox：只保留目标、短字幕、交互提示和身上物品。 */
+#ui > .greybox-hud { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+#ui > .greybox-hud.inactive > :not(.gb-finish) { display: none; }
+.gb-title { position: fixed; top: 16px; left: 18px; color: #f0d9b9; font-size: 13px; letter-spacing: .14em; }
+.gb-objective { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); max-width: 72vw;
+  padding: 8px 16px; color: #e9f3f7; background: rgba(8,12,18,.82); border: 1px solid rgba(111,211,232,.42);
+  border-radius: 999px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-load { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); color: #d9a05b;
+  font-size: 12px; text-shadow: 0 2px 6px #000; white-space: nowrap; }
+.gb-subtitle { position: fixed; left: 50%; bottom: 70px; transform: translate(-50%, 10px); width: min(760px, 84vw);
+  padding: 12px 18px; color: #f5efe4; background: rgba(8,12,18,.88); border-left: 3px solid #d9a05b;
+  text-align: center; font-size: 17px; line-height: 1.55; opacity: 0; transition: .2s; }
+.gb-subtitle.visible { opacity: 1; transform: translate(-50%, 0); }
+.gb-prompt { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); padding: 7px 14px;
+  color: #6fd3e8; background: rgba(8,12,18,.84); border: 1px solid #35507a; border-radius: 4px; opacity: 0; }
+.gb-prompt.visible { opacity: 1; }
+.gb-finish { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; background: rgba(8,12,18,.96); color: #dceaf0; opacity: 0; visibility: hidden; transition: opacity 1.2s;
+  backdrop-filter: blur(6px); }
+.gb-finish.visible { opacity: 1; visibility: visible; }
+.gb-finish.visible { pointer-events: auto; }
+.gb-finish div { color: #6fd3e8; font-size: 13px; letter-spacing: .28em; }
+.gb-finish strong { color: #f5efe4; font-size: clamp(30px, 5vw, 56px); font-weight: 500; }
+.gb-finish span { color: #d9a05b; font-size: 17px; }
+.gb-finish button { margin-top: 20px; min-width: 180px; background: rgba(111,211,232,.1); }
+.game-home { padding: 0; align-items: stretch; justify-content: flex-end; background-color: #050a11;
+  background-position: center; background-size: cover; background-repeat: no-repeat; }
+.game-home::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 42%, rgba(4,8,14,.34) 66%, rgba(4,8,14,.95) 90%); }
+.game-home-panel { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+  width: min(88vw, 1080px); margin: 0 auto 34px; padding: 16px 22px; border: 1px solid rgba(111,211,232,.55);
+  border-radius: 8px; background: rgba(6,12,20,.74); backdrop-filter: blur(5px); }
+.game-home-kicker { color: #6fd3e8; letter-spacing: .28em; font-size: 13px; }
+.game-home-panel button { margin: 0; min-width: 180px; font-size: 17px; background: rgba(111,211,232,.12); }
+.start-card .chapter { color: #f5efe4; font-size: 28px; margin: 8px 0 18px; }
+body.ending #stage { filter: brightness(1.18) saturate(.78); transition: filter 2s ease; }
+body.ending #scene-backdrop::after { background: rgba(245,239,228,.16); transition: background 2s ease; }

@@ -1,10 +1,21 @@
-// statement.js — 表态点：一句判断（≤60 字）+ 已解锁证据引用；反馈后必须给继续入口
+// statement.js — 表态点：从玩家亲手找到的事实与感受中，组成一句判断。
+const SHORT_CLAUSES = {
+  F01: '他还想创造能让人相连的东西',
+  F02: '他确实喜欢医学',
+  F03: '父亲的安排也来自对失败的恐惧',
+  R01: '这 47 次放弃都是他亲手确认的',
+  E01: '一直被肯定也可能让人被困住',
+  E02: '他把感谢背成了亏欠',
+  E03: '喜欢医学不等于只能成为医生',
+  B01: '感谢家人的付出，不等于交出自己的决定权'
+};
+
 export class StatementUI {
   constructor(root, machine, caseView) {
     this.root = root;
     this.machine = machine;
     this.cv = caseView;
-    this.selected = new Set();
+    this.selected = new Map();
   }
 
   show({ onSubmit }) {
@@ -12,83 +23,118 @@ export class StatementUI {
     el.className = 'overlay';
     el.dataset.story = 'statement';
     const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<div class="tag">表态点 · 一句判断</div>
-      <div class="line ghost">${this.cv.ghostLines.statement_guide}</div>
-      <div class="line">${this.cv.statement.prompt}</div>`;
-    const ta = document.createElement('textarea');
-    ta.dataset.story = 'statement-input';
-    ta.maxLength = this.cv.statement.max_chars + 10; // 允许超输，由状态机拒绝并提示
-    const count = document.createElement('div');
-    count.className = 'char-count';
-    ta.addEventListener('input', () => {
-      count.textContent = `${Array.from(ta.value.trim()).length} / ${this.cv.statement.max_chars}`;
-    });
-    const chips = document.createElement('div');
-    chips.className = 'evidence-chips';
-    chips.dataset.story = 'evidence';
-    for (const cardItem of this.cv.cards) {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.dataset.cardId = cardItem.id;
-      const unlocked = this.machine.isUnlocked(cardItem.id);
-      chip.textContent = unlocked ? `${cardItem.id} ${cardItem.title}` : `${cardItem.id} ██████`;
-      if (!unlocked) chip.classList.add('locked');
-      else chip.addEventListener('click', () => {
-        chip.classList.toggle('on');
-        if (chip.classList.contains('on')) this.selected.add(cardItem.id);
-        else this.selected.delete(cardItem.id);
-      });
-      chips.appendChild(chip);
+    card.className = 'card statement-card';
+    card.innerHTML = `<div class="tag">别替他选路 · 只说出你现在看见的</div>
+      <div class="line ghost">Ghost：你已经找到了修改人，也在污染中守住了一个选项。现在，把事实和理解拼在一起。</div>`;
+
+    const unlocked = this.cv.cards.filter((item) => this.machine.isUnlocked(item.id));
+    const lanes = [
+      { type: 'facts', title: '1 · 你认为最重要的事实是什么？' },
+      { type: 'feelings', title: '2 · 你如何理解他的沉默？' }
+    ];
+    for (const lane of lanes) {
+      const group = document.createElement('fieldset');
+      group.className = 'stance-lane';
+      group.dataset.lane = lane.type;
+      const legend = document.createElement('legend');
+      legend.textContent = lane.title;
+      group.appendChild(legend);
+      for (const item of unlocked.filter((entry) => entry.type === lane.type)) {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'stance-choice';
+        choice.dataset.cardId = item.id;
+        choice.innerHTML = `<strong>${item.title}</strong><span>${item.text}</span>`;
+        choice.addEventListener('click', () => {
+          group.querySelectorAll('.stance-choice').forEach((b) => b.classList.remove('on'));
+          choice.classList.add('on');
+          this.selected.set(lane.type, item.id);
+          this._updatePreview();
+        });
+        group.appendChild(choice);
+      }
+      card.appendChild(group);
     }
+
+    const boundary = unlocked.find((item) => item.id === 'B01');
+    const kept = document.createElement('div');
+    kept.className = 'kept-boundary';
+    kept.innerHTML = `<span>你在污染中守住的边界</span><strong>${boundary?.title ?? '感谢不等于交出决定权'}</strong>`;
+    card.appendChild(kept);
+
+    const preview = document.createElement('div');
+    preview.className = 'stance-preview';
+    preview.dataset.story = 'statement-preview';
+    preview.textContent = '选择一条事实和一种理解，这句话才会完整。';
     const err = document.createElement('div');
     err.className = 'sys-toast';
     err.dataset.story = 'statement-error';
     const submit = document.createElement('button');
-    submit.textContent = this.cv.statement.submit_label;
+    submit.textContent = '把这句话说给他听';
     submit.dataset.action = 'statement-submit';
+    submit.disabled = true;
     submit.addEventListener('click', () => {
       err.textContent = '';
-      const res = this.machine.submitJudgment(ta.value, [...this.selected]);
+      const assembled = this._assemble();
+      if (!assembled) return;
+      const res = this.machine.submitJudgment(assembled.text, assembled.ids);
       if (!res.ok) {
-        err.textContent = {
-          bad_length: `请输入 1–${this.cv.statement.max_chars} 字。`,
-          no_evidence: '至少引用一条已解锁的证据。',
-          unknown_evidence: '引用了未知的证据。',
-          locked_evidence: '引用了尚未解锁的证据。',
-          too_many_submissions: '本关最多提交两次。',
-          already_submitted: '正在等待回应。'
-        }[res.reason] ?? '无法提交。';
+        err.textContent = '这句话还没站稳，请重新看看你选的事实与感受。';
         return;
       }
-      ta.disabled = true;
-      submit.disabled = true;
+      card.querySelectorAll('.stance-choice, [data-action="statement-submit"]').forEach((node) => (node.disabled = true));
       onSubmit(res);
     });
-    card.append(ta, count, chips, err, submit);
+    card.append(preview, err, submit);
     el.appendChild(card);
     this.root.appendChild(el);
     this.el = el;
+    this.submit = submit;
+    this.preview = preview;
+  }
+
+  _assemble() {
+    const fact = this.selected.get('facts');
+    const feeling = this.selected.get('feelings');
+    if (!fact || !feeling || !this.machine.isUnlocked('B01')) return null;
+    const text = `${SHORT_CLAUSES[fact]}，${SHORT_CLAUSES[feeling]}；${SHORT_CLAUSES.B01}。`;
+    return { text, ids: [fact, feeling, 'B01'] };
+  }
+
+  _updatePreview() {
+    const assembled = this._assemble();
+    this.submit.disabled = !assembled;
+    this.preview.textContent = assembled?.text ?? '再选一项，让事实和理解同时存在。';
+    this.preview.classList.toggle('ready', Boolean(assembled));
   }
 
   showFeedback(fb, { onContinue }) {
-    this.el?.querySelectorAll('button').forEach((b) => (b.disabled = true));
     const card = this.el.querySelector('.card');
+    card.querySelectorAll('fieldset, .kept-boundary, .stance-preview, .sys-toast, [data-action="statement-submit"]').forEach((node) => node.remove());
     const fbDiv = document.createElement('div');
-    fbDiv.className = 'feedback';
+    fbDiv.className = 'feedback character-feedback';
     fbDiv.dataset.story = 'feedback';
-    const verdict = document.createElement('div');
-    verdict.className = 'verdict';
-    verdict.textContent = `[${String(fb.verdict).toUpperCase()} · 来源:${fb.source}]`;
+    const headings = {
+      accept: 'Ghost：这句话没有替他选路。',
+      revise: 'Ghost：方向是对的，但还有一块不该被省略。',
+      hold: 'Ghost：不急着把它说成最后答案。'
+    };
+    const heading = document.createElement('div');
+    heading.className = 'feedback-speaker';
+    heading.textContent = headings[fb.verdict] ?? headings.hold;
     const resp = document.createElement('div');
+    resp.className = 'feedback-response';
     resp.textContent = fb.response;
-    const ev = document.createElement('div');
-    ev.className = 'small';
-    ev.textContent = `引用：${(fb.evidence_ids ?? []).join('、')}`;
-    fbDiv.append(verdict, resp, ev);
+    const evidenceNames = (fb.evidence_ids ?? [])
+      .map((id) => this.cv.unlockByCard.get(id)?.title)
+      .filter(Boolean);
+    const echo = document.createElement('div');
+    echo.className = 'small';
+    echo.textContent = evidenceNames.length ? `这句话站在：${evidenceNames.join('、')}` : '';
+    fbDiv.append(heading, resp, echo);
     card.appendChild(fbDiv);
     const go = document.createElement('button');
-    go.textContent = '继续'; // revise / hold / timeout 同样给继续入口：拒绝是导航，不是惩罚
+    go.textContent = '把答案还给林澈';
     go.dataset.action = 'feedback-continue';
     go.addEventListener('click', () => {
       go.disabled = true;
