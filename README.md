@@ -73,6 +73,10 @@ game/web/
 └── index.html
 ```
 
+## 配套 Skill：演示视频制作与 B 站投稿
+
+[`skills/game-demo-video-bilibili/`](skills/game-demo-video-bilibili/SKILL.md) —— 本项目演示视频的完整生产流程总结成的一个可复用 ZCode/AI 技能：Playwright 自动通关录屏（真实键盘 + GPU 渲染）、edge-tts 中文语音解说、中英双语 ASS 字幕、ffmpeg 合成，以及 B 站投稿全流程（扫码登录、发布、取 BV 号、改封面）。含 7 个实战跑通的脚本与 25 条踩坑记录。
+
 ## 相关仓库
 
 - 早期 Godot 4.7 原型（案例001·白色走廊）：[Ghost-Inside](https://github.com/asb999/Ghost-Inside)
